@@ -30,7 +30,8 @@ export type SplitTunnelItem = {
 
 export type SplitTunnelConfig = {
   mode: "include" | "exclude";
-  items: SplitTunnelItem[];
+  include: SplitTunnelItem[];
+  exclude: SplitTunnelItem[];
 };
 
 export type Settings = {
@@ -123,10 +124,10 @@ export const api = {
   remove: (kind: "node" | "device", id: string) =>
     request<{ ok: boolean }>(`/api/mesh/${kind}/${id}`, { method: "DELETE" }),
   splitTunnels: () => request<SplitTunnelConfig>("/api/settings/split-tunnels"),
-  saveSplitTunnels: (config: SplitTunnelConfig) =>
+  saveSplitTunnels: (mode: "include" | "exclude", items: SplitTunnelItem[]) =>
     request<SplitTunnelConfig>("/api/settings/split-tunnels", {
       method: "PUT",
-      body: JSON.stringify(config),
+      body: JSON.stringify({ mode, items }),
     }),
   syncDns: () =>
     request<{ dns: unknown; lastDnsSyncAt?: string }>("/api/mesh/sync-dns", {

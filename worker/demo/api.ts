@@ -34,10 +34,14 @@ demoApi.get("/mesh/nodes/:id/routes", (c) =>
 demoApi.get("/settings/split-tunnels", (c) =>
   c.json({
     mode: "include" as const,
-    items: [
+    include: [
       { address: "100.96.0.0/12", description: "Cloudflare Mesh IPv4" },
       { address: "2606:4700:cf1:1000::/64", description: "Cloudflare Mesh IPv6" },
       { host: "wiki.internal.local", description: "Private application" },
+    ],
+    exclude: [
+      { address: "192.168.0.0/16", description: "Local network" },
+      { address: "10.0.0.0/8", description: "Private network" },
     ],
   }),
 );

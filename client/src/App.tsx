@@ -176,6 +176,8 @@ export function App() {
   const [routeType, setRouteType] = useState<"cidr" | "hostname" | null>(null);
   const [routeComment, setRouteComment] = useState("");
   const [splitTunnels, setSplitTunnels] = useState<SplitTunnelConfig | null>(null);
+  const [splitTunnelsLoading, setSplitTunnelsLoading] = useState(false);
+  const [splitTunnelsError, setSplitTunnelsError] = useState<string | null>(null);
   const [splitEditor, setSplitEditor] = useState<{ index: number | null; value: string; description: string } | null>(null);
   const [splitBusy, setSplitBusy] = useState(false);
   const [routeBusy, setRouteBusy] = useState<string | null>(null);
@@ -278,12 +280,19 @@ export function App() {
   }, [selectedId, entries]);
 
   useEffect(() => {
-    if (tab !== "settings" || splitTunnels) return;
+    if (tab !== "settings" || splitTunnels || splitTunnelsLoading || splitTunnelsError) return;
+    setSplitTunnelsLoading(true);
+    setSplitTunnelsError(null);
     void api
       .splitTunnels()
       .then(setSplitTunnels)
-      .catch((e: unknown) => push(e instanceof Error ? e.message : String(e), "error"));
-  }, [tab, splitTunnels]);
+      .catch((e: unknown) => {
+        const message = e instanceof Error ? e.message : String(e);
+        setSplitTunnelsError(message);
+        push(message, "error");
+      })
+      .finally(() => setSplitTunnelsLoading(false));
+  }, [tab, splitTunnels, splitTunnelsLoading]);
 
   useEffect(() => {
     if (!selected || selected.kind !== "node") {
@@ -391,10 +400,14 @@ export function App() {
     }
   }
 
-  async function saveSplitTunnels(next: SplitTunnelConfig, message: string) {
+  async function saveSplitTunnels(
+    mode: "include" | "exclude",
+    items: SplitTunnelConfig["include"],
+    message: string,
+  ) {
     setSplitBusy(true);
     try {
-      const saved = await api.saveSplitTunnels(next);
+      const saved = await api.saveSplitTunnels(mode, items);
       setSplitTunnels(saved);
       push(message, "success");
       return true;
@@ -581,7 +594,7 @@ export function App() {
                 <table>
                   <thead>
                     <tr>
-                      {["Name", "Type", "Domain", "IPv4", "Last seen", "Status"].map((label) => (
+                      {["Name", "Domain", "IPv4", "Last seen"].map((label) => (
                         <th key={label}>{label}</th>
                       ))}
                     </tr>
@@ -589,7 +602,7 @@ export function App() {
                   <tbody>
                     {Array.from({ length: 5 }, (_, i) => (
                       <tr key={i} className="skeleton-row-tr">
-                        {Array.from({ length: 6 }, (_, j) => (
+                        {Array.from({ length: 4 }, (_, j) => (
                           <td key={j}>
                             <SkeletonBlock className="skeleton-cell" />
                           </td>
@@ -611,14 +624,12 @@ export function App() {
                   <thead>
                     <tr>
                       {(
-                        [
-                          ["name", "Name"],
-                          ["kind", "Type"],
-                          ["meshHostname", "Domain"],
-                          ["ipv4", "IPv4"],
-                          ["lastSeenAt", "Last seen"],
-                          ["status", "Status"],
-                        ] as const
+                          [
+                            ["name", "Name"],
+                            ["meshHostname", "Domain"],
+                            ["ipv4", "IPv4"],
+                            ["lastSeenAt", "Last seen"],
+                          ] as const
                       ).map(([key, label]) => (
                         <th
                           key={key}
@@ -640,26 +651,23 @@ export function App() {
                       >
                         <td>
                           <strong className="name-cell">
-                            {e.kind === "node" ? (
-                              <Server
-                                size={14}
-                                strokeWidth={2.25}
-                                className="kind-icon node"
-                                aria-hidden
-                              />
-                            ) : (
-                              <Smartphone
-                                size={14}
-                                strokeWidth={2.25}
-                                className="kind-icon device"
-                                aria-hidden
-                              />
-                            )}
+                            {(() => {
+                              const meta = machineStatusMeta(e.status);
+                              const Icon = e.kind === "node" ? Server : Smartphone;
+                              return (
+                                <span
+                                  className={`machine-kind-status ${e.kind}`}
+                                  data-tone={meta.tone}
+                                  data-tip={`${e.kind === "node" ? "Node" : "Device"} · ${meta.label}`}
+                                  tabIndex={0}
+                                  aria-label={`${e.kind === "node" ? "Node" : "Device"}, ${meta.label}`}
+                                >
+                                  <Icon size={14} strokeWidth={2.25} aria-hidden />
+                                </span>
+                              );
+                            })()}
                             {e.name}
                           </strong>
-                        </td>
-                        <td>
-                          <KindBadge kind={e.kind} />
                         </td>
                         <td>
                           <CopyValue
@@ -674,21 +682,6 @@ export function App() {
                           />
                         </td>
                         <td>{formatSeen(e.lastSeenAt)}</td>
-                        <td>
-                          {(() => {
-                            const meta = machineStatusMeta(e.status);
-                            return (
-                              <span className="machine-status">
-                                <span
-                                  className="status-dot"
-                                  data-tone={meta.tone}
-                                  aria-hidden
-                                />
-                                {meta.label}
-                              </span>
-                            );
-                          })()}
-                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -909,7 +902,7 @@ export function App() {
                 </div>
               </div>
 
-              <div className="settings-block settings-block-wide split-tunnels-block">
+              <div className="settings-block settings-block-wide split-tunnels-block" aria-busy={splitTunnelsLoading || splitBusy}>
                 <div className="split-head">
                   <div>
                     <h3>WARP split tunnels</h3>
@@ -926,8 +919,8 @@ export function App() {
                         disabled={locked || splitBusy}
                         onChange={(e) => {
                           const mode = e.target.checked ? "include" : "exclude";
-                          if (!confirm(`Switch to ${mode} mode? The current list will be kept and applied using the new mode.`)) return;
-                          void saveSplitTunnels({ ...splitTunnels, mode }, `Switched to ${mode} mode.`);
+                          if (!confirm(`Switch to ${mode} mode? Cloudflare will apply the saved ${mode} list.`)) return;
+                          void saveSplitTunnels(mode, splitTunnels[mode], `Switched to ${mode} mode.`);
                         }}
                       />
                       <span className="switch-track" aria-hidden><span /></span>
@@ -940,12 +933,27 @@ export function App() {
                     ? "Only listed traffic is sent through WARP."
                     : "All traffic is sent through WARP except listed traffic."}
                 </p>
-                {!splitTunnels ? (
-                  <Spinner label="Loading…" />
-                ) : (
+                {splitTunnelsLoading ? (
+                  <div className="split-list" aria-label="Loading split tunnels">
+                    {Array.from({ length: 3 }, (_, index) => (
+                      <div className="route-row" key={index}>
+                        <div className="skeleton-stack">
+                          <SkeletonBlock className="skeleton-route-primary" />
+                          <SkeletonBlock className="skeleton-route-secondary" />
+                        </div>
+                        <SkeletonBlock className="skeleton-route-action" />
+                      </div>
+                    ))}
+                  </div>
+                ) : splitTunnelsError ? (
+                  <div className="load-error">
+                    <span className="hint">Could not load split tunnels.</span>
+                    <button type="button" className="btn" onClick={() => setSplitTunnelsError(null)}>Retry</button>
+                  </div>
+                ) : splitTunnels ? (
                   <>
                     <div className="split-list">
-                      {splitTunnels.items.map((item, index) => (
+                      {splitTunnels[splitTunnels.mode].map((item, index) => (
                         <div className="route-row" key={`${item.address ?? item.host}-${index}`}>
                           <div>
                             <span className="mono">{item.address ?? item.host}</span>
@@ -971,7 +979,8 @@ export function App() {
                               onClick={() => {
                                 if (!confirm(`Remove ${item.address ?? item.host}?`)) return;
                                 void saveSplitTunnels(
-                                  { ...splitTunnels, items: splitTunnels.items.filter((_, itemIndex) => itemIndex !== index) },
+                                  splitTunnels.mode,
+                                  splitTunnels[splitTunnels.mode].filter((_, itemIndex) => itemIndex !== index),
                                   "Split tunnel item removed.",
                                 );
                               }}
@@ -991,7 +1000,7 @@ export function App() {
                       + Add
                     </button>
                   </>
-                )}
+                ) : null}
               </div>
             </div>
           )}
@@ -1062,11 +1071,13 @@ export function App() {
               const item = value.includes("/")
                 ? { address: value, description: splitEditor.description.trim() || undefined }
                 : { host: value, description: splitEditor.description.trim() || undefined };
+              const activeItems = splitTunnels[splitTunnels.mode];
               const items = splitEditor.index === null
-                ? [...splitTunnels.items, item]
-                : splitTunnels.items.map((current, index) => index === splitEditor.index ? item : current);
+                ? [...activeItems, item]
+                : activeItems.map((current, index) => index === splitEditor.index ? item : current);
               void saveSplitTunnels(
-                { ...splitTunnels, items },
+                splitTunnels.mode,
+                items,
                 splitEditor.index === null ? "Split tunnel item added." : "Split tunnel item updated.",
               ).then((saved) => {
                 if (saved) setSplitEditor(null);
@@ -1189,19 +1200,25 @@ export function App() {
             </p>
 
             {drawerEntry.kind === "node" && (
-              <div className="route-box">
+              <div className="route-box" aria-busy={routesLoading}>
                 <div className="route-heading">
                   <div>
                     <strong>Routes</strong>
                     <p className="hint">Private networks and hostnames routed through this node.</p>
                   </div>
-                  <button type="button" className="btn btn-primary" disabled={Boolean(routeBusy) || Boolean(settings?.demo)} onClick={() => setRouteType("cidr")}>New route</button>
                 </div>
                 {routesLoading ? (
-                  <span className="btn-spin hint">
-                    <Loader2 size={14} strokeWidth={2.5} className="spin" aria-hidden />
-                    Loading routes…
-                  </span>
+                  <div className="route-list" aria-label="Loading routes">
+                    {Array.from({ length: 2 }, (_, index) => (
+                      <div className="route-row" key={index}>
+                        <div className="skeleton-stack">
+                          <SkeletonBlock className="skeleton-route-primary" />
+                          <SkeletonBlock className="skeleton-route-secondary" />
+                        </div>
+                        <SkeletonBlock className="skeleton-route-action" />
+                      </div>
+                    ))}
+                  </div>
                 ) : routes.length === 0 ? (
                   <p className="hint">No routes configured.</p>
                 ) : (
@@ -1239,6 +1256,16 @@ export function App() {
                       </div>
                     ))}
                   </div>
+                )}
+                {!routeType && (
+                  <button
+                    type="button"
+                    className="btn btn-primary route-add-button"
+                    disabled={Boolean(routeBusy) || Boolean(settings?.demo)}
+                    onClick={() => setRouteType("cidr")}
+                  >
+                    + New route
+                  </button>
                 )}
                 {routeType && <form
                   className="route-form"

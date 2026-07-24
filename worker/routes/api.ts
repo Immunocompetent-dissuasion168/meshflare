@@ -224,7 +224,8 @@ api.put("/settings/split-tunnels", async (c) => {
     throw new HTTPException(400, { message: "each item must contain one address or host" });
   }
   const cf = createCfClient(c.env);
-  return c.json({ mode: body.mode, items: await setDefaultSplitTunnels(cf, body.mode, items) });
+  await setDefaultSplitTunnels(cf, body.mode, items);
+  return c.json(await getDefaultSplitTunnels(cf));
 });
 
 api.post("/mesh/sync-dns", async (c) => {

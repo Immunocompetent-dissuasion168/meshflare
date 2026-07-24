@@ -77,12 +77,12 @@ jobs:
     steps:
       - name: Trigger deploy webhook
         env:
-          WEBHOOK_URL: ${{ secrets.WEBHOOK_URL }}
-          WEBHOOK_TOKEN: ${{ secrets.WEBHOOK_TOKEN }}
+          WEBHOOK_URL: ${{ secrets.WEBHOOK_URL || secrets.COOLIFY_WEBHOOK }}
+          WEBHOOK_TOKEN: ${{ secrets.WEBHOOK_TOKEN || secrets.COOLIFY_TOKEN }}
         run: |
           if [ -z "$WEBHOOK_URL" ] || [ -z "$WEBHOOK_TOKEN" ]; then
-            echo "WEBHOOK_URL / WEBHOOK_TOKEN not set; skipping."
-            exit 0
+            echo "Coolify webhook URL or token is not configured."
+            exit 1
           fi
           response="$(mktemp)"
           code="$(curl --silent --show-error --output "$response" --write-out '%{http_code}' \
