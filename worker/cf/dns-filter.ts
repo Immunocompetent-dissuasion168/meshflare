@@ -1,4 +1,4 @@
-import type { CloudflareClient } from "./client";
+import { CloudflareApiError, type CloudflareClient } from "./client";
 import type { Env, Settings } from "../types";
 
 const DEFAULT_FILTER_URL = "https://small.oisd.nl/";
@@ -137,8 +137,20 @@ export async function markCleanupRan(env: Env): Promise<void> {
 }
 
 async function listGatewayLists(cf: CloudflareClient): Promise<GatewayList[]> {
-  const res = await cf.request<GatewayList[]>("GET", cf.accountPath("/gateway/lists"));
-  return res.result ?? [];
+  const all: GatewayList[] = [];
+  let page = 1;
+  for (;;) {
+    const res = await cf.request<GatewayList[]>(
+      "GET",
+      cf.accountPath(`/gateway/lists?per_page=100&page=${page}`),
+    );
+    const batch = res.result ?? [];
+    all.push(...batch);
+    if (batch.length < 100) break;
+    page += 1;
+    if (page > 50) break;
+  }
+  return all;
 }
 
 async function listGatewayRules(cf: CloudflareClient): Promise<GatewayRule[]> {
@@ -199,28 +211,46 @@ async function upsertBlockRule(
   }
 }
 
+async function sleep(ms: number): Promise<void> {
+  await new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 async function deleteFilterArtifacts(cf: CloudflareClient, env: Env): Promise<void> {
+  const ruleNames = new Set([env.DNS_FILTER_RULE_NAME, "meshflare OISD Small"]);
   const rules = await listGatewayRules(cf);
   for (const rule of rules) {
-    if (rule.name === env.DNS_FILTER_RULE_NAME) {
+    if (ruleNames.has(rule.name)) {
       await cf.request("DELETE", cf.accountPath(`/gateway/rules/${rule.id}`));
     }
   }
 
-  // Also clean legacy meshflare-oisd lists/rules from older installs.
+  // Gateway still reports lists "in use" briefly after the rule delete.
+  await sleep(2000);
+
   const lists = await listGatewayLists(cf);
   const prefixes = [env.DNS_FILTER_LIST_PREFIX, "meshflare-oisd"];
   for (const list of lists) {
-    if (prefixes.some((p) => list.name.startsWith(p))) {
-      await cf.request("DELETE", cf.accountPath(`/gateway/lists/${list.id}`));
+    if (!prefixes.some((p) => list.name.startsWith(p))) continue;
+    let lastError: unknown;
+    for (let attempt = 0; attempt < 6; attempt++) {
+      try {
+        await cf.request("DELETE", cf.accountPath(`/gateway/lists/${list.id}`));
+        lastError = undefined;
+        break;
+      } catch (e) {
+        lastError = e;
+        if (e instanceof CloudflareApiError && e.status === 404) {
+          lastError = undefined;
+          break;
+        }
+        const busy =
+          e instanceof CloudflareApiError &&
+          /in use|gateway policies/i.test(e.message);
+        if (!busy || attempt === 5) break;
+        await sleep(1000 * (attempt + 1));
+      }
     }
-  }
-
-  const legacyRule = "meshflare OISD Small";
-  for (const rule of rules) {
-    if (rule.name === legacyRule && rule.name !== env.DNS_FILTER_RULE_NAME) {
-      await cf.request("DELETE", cf.accountPath(`/gateway/rules/${rule.id}`));
-    }
+    if (lastError) throw lastError;
   }
 }
 
