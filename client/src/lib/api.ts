@@ -17,6 +17,7 @@ export type Settings = {
   offlineDays: number;
   oisdEnabled: boolean;
   oisdStatus: string;
+  oisdLastSyncedAt?: string | null;
   accountIdConfigured?: boolean;
   meshSuffix?: string;
 };
@@ -53,10 +54,15 @@ export const api = {
     request<Settings>("/api/settings", { method: "PATCH", body: JSON.stringify(body) }),
   listMesh: () => request<{ entries: MeshEntry[] }>("/api/mesh"),
   createNode: (name: string) =>
-    request<{ node: { id: string; name: string }; notice?: string }>("/api/mesh/nodes", {
-      method: "POST",
-      body: JSON.stringify({ name }),
-    }),
+    request<{ node: { id: string; name: string; created_at?: string }; notice?: string }>(
+      "/api/mesh/nodes",
+      {
+        method: "POST",
+        body: JSON.stringify({ name }),
+      },
+    ),
+  getNodeToken: (id: string) =>
+    request<{ token: string; decoded: unknown }>(`/api/mesh/nodes/${id}/token`),
   rename: (kind: "node" | "device", id: string, name: string) =>
     request<{ notice?: string; renamed: unknown; displaced?: unknown }>(
       `/api/mesh/${kind}/${id}`,
@@ -77,16 +83,6 @@ export const api = {
         message = await res.text();
       }
       throw new Error(message);
-    }
-    const ct = res.headers.get("content-type") || "";
-    if (ct.includes("application/json")) {
-      return (await res.json()) as {
-        needsDocker: true;
-        nodeName: string;
-        token: string;
-        command: string;
-        note: string;
-      };
     }
     const blob = await res.blob();
     const url = URL.createObjectURL(blob);

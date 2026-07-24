@@ -103,35 +103,20 @@ api.get("/mesh/nodes/:id/wireguard", async (c) => {
   const cf = createCfClient(c.env);
   const id = c.req.param("id");
   const token = await getMeshNodeToken(cf, id);
-  // Validate token shape early
   decodeConnectorToken(token);
 
   const inventory = await buildMeshInventory(cf, c.env);
   const node = inventory.find((e) => e.kind === "node" && e.id === id);
   const name = node?.name ?? id;
 
-  const result = await extractWireGuardConf(c.env, token);
-  if ("conf" in result) {
-    return new Response(result.conf, {
-      status: 200,
-      headers: {
-        "Content-Type": "text/plain; charset=utf-8",
-        "Content-Disposition": `attachment; filename="${name}.conf"`,
-      },
-    });
-  }
-
-  return c.json(
-    {
-      needsDocker: true,
-      nodeName: name,
-      token: result.token,
-      command: result.command,
-      note:
-        "Cloudflare connector enrollment uses proprietary wdapi. Run this Docker command locally (requires a WireGuard device profile). Or set WG_EXTRACTOR_URL to a self-hosted extractor.",
+  const conf = await extractWireGuardConf(c.env, token);
+  return new Response(conf, {
+    status: 200,
+    headers: {
+      "Content-Type": "text/plain; charset=utf-8",
+      "Content-Disposition": `attachment; filename="${name}.conf"`,
     },
-    200,
-  );
+  });
 });
 
 api.get("/mesh/nodes/:id/token", async (c) => {

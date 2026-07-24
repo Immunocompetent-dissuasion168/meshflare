@@ -1,0 +1,63 @@
+export function oisdStatusMeta(status: string, enabled: boolean): {
+  tone: "off" | "ok" | "sync" | "warn" | "danger";
+  tip: string;
+} {
+  switch (status) {
+    case "enabled":
+      return { tone: "ok", tip: "Enabled" };
+    case "pending_enable":
+      return { tone: "sync", tip: "Enabling…" };
+    case "pending_refresh":
+      return { tone: "sync", tip: "Refreshing lists…" };
+    case "syncing":
+      return { tone: "sync", tip: "Uploading lists…" };
+    case "pending_disable":
+      return { tone: "warn", tip: "Disabling…" };
+    case "error":
+      return { tone: "danger", tip: "Sync error" };
+    default:
+      if (enabled) return { tone: "ok", tip: "Enabled" };
+      return { tone: "off", tip: "Disabled" };
+  }
+}
+
+export function isNodeOffline(status: string): boolean {
+  const s = status.toLowerCase();
+  return s !== "healthy" && s !== "up";
+}
+
+/** Debian/Ubuntu one-liner: install cloudflare-warp + enroll connector + connect. */
+export function warpConnectorInstallCommand(token: string): string {
+  return [
+    `curl -fsSL https://pkg.cloudflareclient.com/pubkey.gpg | sudo gpg --yes --dearmor -o /usr/share/keyrings/cloudflare-warp-archive-keyring.gpg &&`,
+    `echo "deb [signed-by=/usr/share/keyrings/cloudflare-warp-archive-keyring.gpg] https://pkg.cloudflareclient.com/ $(. /etc/os-release && echo "$VERSION_CODENAME") main" | sudo tee /etc/apt/sources.list.d/cloudflare-client.list &&`,
+    `sudo apt-get update -qq && sudo apt-get install -y -qq cloudflare-warp &&`,
+    `printf 'net.ipv4.ip_forward = 1\\nnet.ipv6.conf.all.forwarding = 1\\nnet.ipv6.conf.all.accept_ra = 2\\n' | sudo tee /etc/sysctl.d/99-zzz-cloudflare-warp-connector.conf && sudo sysctl --system`,
+    `warp-cli connector new ${token} && warp-cli connect`,
+  ].join("\n");
+}
+
+export async function copyText(text: string): Promise<void> {
+  try {
+    if (navigator.clipboard?.writeText && document.hasFocus()) {
+      await navigator.clipboard.writeText(text);
+      return;
+    }
+  } catch {
+    /* fall through */
+  }
+
+  const ta = document.createElement("textarea");
+  ta.value = text;
+  ta.setAttribute("readonly", "");
+  ta.style.position = "fixed";
+  ta.style.top = "0";
+  ta.style.left = "0";
+  ta.style.opacity = "0";
+  document.body.appendChild(ta);
+  ta.focus();
+  ta.select();
+  const ok = document.execCommand("copy");
+  document.body.removeChild(ta);
+  if (!ok) throw new Error("Could not copy to clipboard");
+}

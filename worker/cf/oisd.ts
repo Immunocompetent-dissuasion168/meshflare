@@ -4,6 +4,7 @@ import type { Env, Settings } from "../types";
 const OISD_SMALL_URL = "https://small.oisd.nl/";
 const LIST_CHUNK = 1000;
 const CHUNKS_PER_TICK = 3;
+const OISD_REFRESH_MS = 6 * 60 * 60 * 1000;
 
 type GatewayList = {
   id: string;
@@ -59,10 +60,12 @@ export async function getSettings(env: Env): Promise<Settings> {
   );
   const oisdEnabled = (await getSetting(env.DB, "oisd_enabled", "0")) === "1";
   const oisdStatus = await getSetting(env.DB, "oisd_status", "idle");
+  const oisdLastSyncedAt = await getSetting(env.DB, "oisd_last_synced_at", "");
   return {
     offlineDays: Number.isFinite(offlineDays) && offlineDays > 0 ? offlineDays : 7,
     oisdEnabled,
     oisdStatus,
+    oisdLastSyncedAt: oisdLastSyncedAt || null,
   };
 }
 
@@ -163,15 +166,36 @@ async function deleteOisdArtifacts(cf: CloudflareClient, env: Env): Promise<void
 }
 
 /**
- * Progressive OISD enable/disable. Called from cron so large list uploads
- * stay within Worker time limits (a few chunks per tick).
+ * Progressive OISD enable/disable/refresh. Called from cron so large list
+ * uploads stay within Worker time limits (a few chunks per tick).
+ * When enabled, refreshes from OISD Small every 6 hours.
  */
 export async function processOisdTick(
   cf: CloudflareClient,
   env: Env,
 ): Promise<string> {
   const settings = await getSettings(env);
-  const status = settings.oisdStatus;
+  let status = settings.oisdStatus;
+
+  // Periodic refresh while enabled
+  if (status === "enabled" && settings.oisdEnabled) {
+    const last = settings.oisdLastSyncedAt
+      ? Date.parse(settings.oisdLastSyncedAt)
+      : 0;
+    if (!last || Date.now() - last >= OISD_REFRESH_MS) {
+      await setSetting(env.DB, "oisd_status", "pending_refresh");
+      status = "pending_refresh";
+    }
+  }
+
+  if (status === "pending_refresh") {
+    await deleteOisdArtifacts(cf, env);
+    await env.OISD_CACHE.delete("domains.json");
+    await setSetting(env.DB, "oisd_cursor", "0");
+    await setSetting(env.DB, "oisd_status", "pending_enable");
+    status = "pending_enable";
+    return "oisd_refresh_started";
+  }
 
   if (status === "pending_disable" || (status === "idle" && !settings.oisdEnabled)) {
     if (status === "pending_disable") {
@@ -180,6 +204,7 @@ export async function processOisdTick(
       await setSetting(env.DB, "oisd_status", "idle");
       await setSetting(env.DB, "oisd_enabled", "0");
       await setSetting(env.DB, "oisd_cursor", "0");
+      await setSetting(env.DB, "oisd_last_synced_at", "");
       return "oisd_disabled";
     }
     return "oisd_idle";
@@ -240,6 +265,7 @@ export async function processOisdTick(
       await upsertBlockRule(cf, env, lists);
       await setSetting(env.DB, "oisd_status", "enabled");
       await setSetting(env.DB, "oisd_enabled", "1");
+      await setSetting(env.DB, "oisd_last_synced_at", new Date().toISOString());
       return `oisd_enabled chunks=${lists.length} created_this_tick=${created}`;
     }
 

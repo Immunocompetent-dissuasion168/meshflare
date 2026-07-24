@@ -47,12 +47,13 @@ Attach a custom domain (e.g. `meshflare.wastu.net`) and protect it with Cloudfla
 
 ## WireGuard
 
-Connector enrollment uses Cloudflare’s proprietary device API (`wdapi`), not plain REST — a Worker cannot enroll with `fetch` alone.
+Connector enrollment uses Cloudflare’s proprietary device API (`wdapi`). meshflare downloads `.conf` files by calling a Coolify-hosted extractor (`container/`) via `WG_EXTRACTOR_URL` (+ optional `WG_EXTRACTOR_SECRET`).
 
-meshflare ships:
+Deploy the extractor with Coolify (`coolify app create dockerfile …` from `container/`), then:
 
-1. **`container/`** — HTTP service wrapping `warp-cli connector new` (same flow as [wgcf-connector](https://github.com/AnimMouse/wgcf-connector)). Use with Cloudflare Containers on **Workers Paid**, or run the image yourself and set `WG_EXTRACTOR_URL`.
-2. **`scripts/extract-wg.sh`** — local Docker extract.
-3. **UI fallback** — copies a `docker run … ghcr.io/animmouse/wgcf-connector` command when no extractor is configured.
+```bash
+bunx wrangler secret put WG_EXTRACTOR_URL
+bunx wrangler secret put WG_EXTRACTOR_SECRET
+```
 
-Peer public key must be `bmXOC+F1FxEMF9dyiK2H5/1SUtzH0JuVo51h2wPfgyo=` (WireGuard device profile, not MASQUE). Downloading/enrolling **creates a new connector registration** for that mesh node token.
+Requires a device profile set to WireGuard (peer key `bmXOC+F1FxEMF9dyiK2H5/1SUtzH0JuVo51h2wPfgyo=`). Downloading creates a new connector registration.

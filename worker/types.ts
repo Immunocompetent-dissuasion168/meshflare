@@ -1,6 +1,8 @@
 export type Env = Cloudflare.Env & {
   CLOUDFLARE_API_KEY?: string;
   CLOUDFLARE_EMAIL?: string;
+  WG_EXTRACTOR_URL?: string;
+  WG_EXTRACTOR_SECRET?: string;
 };
 
 export type MeshNode = {
@@ -9,6 +11,14 @@ export type MeshNode = {
   status: string;
   created_at: string;
   tun_type?: string;
+  connections?: Array<{
+    client_id?: string;
+    uuid?: string;
+    id?: string;
+    opened_at?: string;
+    origin_ip?: string;
+    colo_name?: string;
+  }>;
 };
 
 export type DeviceRegistration = {
@@ -56,6 +66,7 @@ export type Settings = {
   offlineDays: number;
   oisdEnabled: boolean;
   oisdStatus: string;
+  oisdLastSyncedAt?: string | null;
 };
 
 export type CfApiResult<T> = {

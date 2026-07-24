@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""HTTP front-end for meshflare WireGuard extraction inside the Container."""
+"""HTTP front-end for meshflare WireGuard extraction (Coolify / Docker)."""
 
 from __future__ import annotations
 
@@ -10,9 +10,12 @@ import tempfile
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 
+AUTH_SECRET = os.environ.get("WG_EXTRACTOR_SECRET", "").strip()
+
+
 class Handler(BaseHTTPRequestHandler):
-    def log_message(self, fmt: str, *args) -> None:  # quieter logs
-        print(f"[wg] {self.address_string()} - {fmt % args}")
+    def log_message(self, fmt: str, *args) -> None:
+        print(f"[wg] {self.address_string()} - {fmt % args}", flush=True)
 
     def _send(self, code: int, body: bytes, content_type: str = "text/plain") -> None:
         self.send_response(code)
@@ -20,6 +23,14 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)
+
+    def _authorized(self) -> bool:
+        if not AUTH_SECRET:
+            return True
+        auth = self.headers.get("Authorization", "")
+        if auth == f"Bearer {AUTH_SECRET}":
+            return True
+        return self.headers.get("X-Meshflare-Secret", "") == AUTH_SECRET
 
     def do_GET(self) -> None:
         if self.path in ("/", "/health"):
@@ -30,6 +41,9 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self) -> None:
         if self.path != "/extract":
             self._send(404, b"not found")
+            return
+        if not self._authorized():
+            self._send(401, b"unauthorized")
             return
 
         length = int(self.headers.get("Content-Length", "0"))
@@ -48,9 +62,7 @@ class Handler(BaseHTTPRequestHandler):
         env = os.environ.copy()
         env["CONNECTOR_TOKEN"] = token
 
-        # Fresh state dir so each extract is independent
-        with tempfile.TemporaryDirectory(prefix="warp-") as tmp:
-            # WARP stores state under /var/lib/cloudflare-warp; wipe between runs
+        with tempfile.TemporaryDirectory(prefix="warp-"):
             subprocess.run(["rm", "-rf", "/var/lib/cloudflare-warp"], check=False)
             subprocess.run(["mkdir", "-p", "/var/lib/cloudflare-warp", "/run/dbus"], check=False)
 
@@ -72,8 +84,7 @@ class Handler(BaseHTTPRequestHandler):
                 self._send(500, err)
                 return
 
-            conf = result.stdout.encode()
-            self._send(200, conf, "text/plain; charset=utf-8")
+            self._send(200, result.stdout.encode(), "text/plain; charset=utf-8")
 
 
 def main() -> None:

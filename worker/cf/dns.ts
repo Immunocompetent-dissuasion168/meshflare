@@ -70,16 +70,24 @@ export async function buildMeshInventory(
   ]);
 
   const connectorRegsByName = new Map<string, DeviceRegistration>();
+  const regsById = new Map<string, DeviceRegistration>();
   const deviceEntries: MeshEntry[] = [];
 
   for (const reg of regs) {
+    regsById.set(reg.id, reg);
+    if (reg.device?.id) regsById.set(reg.device.id, reg);
+
     const name = reg.device?.name?.trim() || "unnamed";
     const ipv4 = reg.virtual_ipv4?.trim() || null;
     const ipv6 = reg.virtual_ipv6?.trim() || null;
     const connector = isConnectorRegistration(reg);
 
     if (connector) {
-      connectorRegsByName.set(name.toLowerCase(), reg);
+      const key = name.toLowerCase();
+      const prev = connectorRegsByName.get(key);
+      if (!prev || newerRegistration(reg, prev)) {
+        connectorRegsByName.set(key, reg);
+      }
       continue;
     }
 
@@ -100,7 +108,7 @@ export async function buildMeshInventory(
   }
 
   const nodeEntries: MeshEntry[] = nodes.map((node: MeshNode) => {
-    const reg = connectorRegsByName.get(node.name.toLowerCase());
+    const reg = resolveNodeRegistration(node, regsById, connectorRegsByName);
     const ipv4 = reg?.virtual_ipv4?.trim() || null;
     const ipv6 = reg?.virtual_ipv6?.trim() || null;
     return {
@@ -114,14 +122,41 @@ export async function buildMeshInventory(
       status: node.status,
       lastSeenAt: reg?.last_seen_at ?? null,
       createdAt: node.created_at,
-      tunnelType: "warp_connector",
+      tunnelType: reg?.tunnel_type ?? "warp_connector",
       isConnector: true,
     };
   });
 
-  return [...nodeEntries, ...deviceEntries].sort((a, b) =>
-    a.name.localeCompare(b.name),
-  );
+  return [...nodeEntries, ...deviceEntries].sort((a, b) => {
+    const tb = Date.parse(b.createdAt) || 0;
+    const ta = Date.parse(a.createdAt) || 0;
+    if (tb !== ta) return tb - ta;
+    return a.name.localeCompare(b.name);
+  });
+}
+
+function newerRegistration(a: DeviceRegistration, b: DeviceRegistration): boolean {
+  const ta = Date.parse(a.last_seen_at ?? a.created_at) || 0;
+  const tb = Date.parse(b.last_seen_at ?? b.created_at) || 0;
+  return ta >= tb;
+}
+
+/**
+ * WireGuard/connector enrollments often keep a host/docker name that does not
+ * match the mesh node name. Prefer the active tunnel connection's client_id.
+ */
+function resolveNodeRegistration(
+  node: MeshNode,
+  regsById: Map<string, DeviceRegistration>,
+  connectorRegsByName: Map<string, DeviceRegistration>,
+): DeviceRegistration | undefined {
+  for (const conn of node.connections ?? []) {
+    const clientId = conn.client_id ?? conn.id ?? conn.uuid;
+    if (!clientId) continue;
+    const byConn = regsById.get(clientId);
+    if (byConn) return byConn;
+  }
+  return connectorRegsByName.get(node.name.toLowerCase());
 }
 
 export type DnsSyncStats = {
