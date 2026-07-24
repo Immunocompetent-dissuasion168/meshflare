@@ -386,7 +386,11 @@ export function App() {
     <div className="app">
       {settings?.demo ? (
         <div className="demo-banner" role="status">
-          Demo mode — read-only sample data. Deploy your own instance to manage a real mesh.
+          Demo mode — read-only sample data.{" "}
+          <a href="https://github.com/bgwastu/meshflare" target="_blank" rel="noreferrer">
+            Get the code on GitHub
+          </a>{" "}
+          to deploy your own instance.
         </div>
       ) : null}
       <header className="top">
