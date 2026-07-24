@@ -2,11 +2,13 @@
  * WireGuard extraction for mesh nodes via Coolify-hosted extractor.
  *
  * Enrollment uses proprietary wdapi (`warp-cli connector new`). Workers cannot
- * run warp-cli; meshflare POSTs the connector token to WG_EXTRACTOR_URL
- * (Coolify container) which returns a WireGuard .conf.
+ * run warp-cli; meshflare POSTs the connector token to the Coolify extractor
+ * which returns a WireGuard .conf.
  */
 
 import type { Env } from "../types";
+
+const WG_EXTRACTOR_BASE = "https://meshflare-wg.wastu.net";
 
 export function decodeConnectorToken(token: string): {
   account_tag: string;
@@ -25,13 +27,6 @@ export function decodeConnectorToken(token: string): {
 }
 
 export async function extractWireGuardConf(env: Env, token: string): Promise<string> {
-  const url = env.WG_EXTRACTOR_URL?.trim();
-  if (!url) {
-    throw new Error(
-      "WG_EXTRACTOR_URL is not configured. Deploy the meshflare WG extractor on Coolify and set the Worker secret.",
-    );
-  }
-
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
   };
@@ -39,7 +34,7 @@ export async function extractWireGuardConf(env: Env, token: string): Promise<str
     headers.Authorization = `Bearer ${env.WG_EXTRACTOR_SECRET.trim()}`;
   }
 
-  const res = await fetch(url.replace(/\/$/, "") + "/extract", {
+  const res = await fetch(`${WG_EXTRACTOR_BASE}/extract`, {
     method: "POST",
     headers,
     body: JSON.stringify({ token }),

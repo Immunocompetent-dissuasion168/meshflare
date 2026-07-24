@@ -20,7 +20,7 @@ Self-hostable Cloudflare Mesh manager (account ID + API credentials from env).
 | `CLOUDFLARE_API_TOKEN` | recommended | Scoped API token |
 | `CLOUDFLARE_API_KEY` + `CLOUDFLARE_EMAIL` | alt | Global key auth |
 | `MESH_DNS_SUFFIX` | no | default `mesh` |
-| `WG_EXTRACTOR_URL` | no | Optional HTTP extractor: `POST {token}` → WireGuard conf |
+| `WG_EXTRACTOR_SECRET` | for WG download | Bearer shared with Coolify extractor |
 
 ```bash
 cp .dev.vars.example .dev.vars
@@ -47,12 +47,9 @@ Attach a custom domain (e.g. `meshflare.wastu.net`) and protect it with Cloudfla
 
 ## WireGuard
 
-Connector enrollment uses Cloudflare’s proprietary device API (`wdapi`). meshflare downloads `.conf` files by calling a Coolify-hosted extractor (`container/`) via `WG_EXTRACTOR_URL` (+ optional `WG_EXTRACTOR_SECRET`).
-
-Deploy the extractor with Coolify (`coolify app create dockerfile …` from `container/`), then:
+Connector enrollment uses Cloudflare’s proprietary device API (`wdapi`). meshflare downloads `.conf` files by calling the Coolify extractor at `https://meshflare-wg.wastu.net` (`container/`), authenticated with `WG_EXTRACTOR_SECRET`.
 
 ```bash
-bunx wrangler secret put WG_EXTRACTOR_URL
 bunx wrangler secret put WG_EXTRACTOR_SECRET
 ```
 

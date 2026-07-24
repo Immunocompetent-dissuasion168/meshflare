@@ -1,7 +1,6 @@
 export type Env = Cloudflare.Env & {
   CLOUDFLARE_API_KEY?: string;
   CLOUDFLARE_EMAIL?: string;
-  WG_EXTRACTOR_URL?: string;
   WG_EXTRACTOR_SECRET?: string;
 };
 
