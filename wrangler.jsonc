@@ -1,0 +1,52 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "meshflare",
+  "main": "./worker/index.ts",
+  "compatibility_date": "2026-07-24",
+  "compatibility_flags": ["nodejs_compat"],
+  "workers_dev": false,
+  "preview_urls": false,
+  "assets": {
+    "not_found_handling": "single-page-application",
+    "binding": "ASSETS",
+    "run_worker_first": ["/api/*"]
+  },
+  "observability": {
+    "enabled": true,
+    "head_sampling_rate": 1
+  },
+  "triggers": {
+    "crons": ["* * * * *"]
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "meshflare",
+      "database_id": "da679982-11c4-4cad-8138-c20bbcf381e2",
+      "migrations_dir": "migrations"
+    }
+  ],
+  "r2_buckets": [
+    {
+      "binding": "OISD_CACHE",
+      "bucket_name": "meshflare-oisd"
+    }
+  ],
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": ["WgExtractor"]
+    },
+    {
+      "tag": "v2",
+      "deleted_classes": ["WgExtractor"]
+    }
+  ],
+  "vars": {
+    "MESH_DNS_SUFFIX": "mesh",
+    "DEFAULT_OFFLINE_DAYS": "7",
+    "OISD_LIST_PREFIX": "meshflare-oisd",
+    "OISD_RULE_NAME": "meshflare OISD Small",
+    "MESH_RULE_PREFIX": "meshflare DNS"
+  }
+}

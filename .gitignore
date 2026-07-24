@@ -1,0 +1,20 @@
+# Dependencies
+node_modules/
+
+# Build / local wrangler
+.wrangler/
+.mf/
+dist/
+*.log
+.DS_Store
+
+# Secrets
+.dev.vars
+.dev.vars*
+.env
+.env.*
+!.env.example
+!.dev.vars.example
+
+# Generated
+worker-configuration.d.ts
