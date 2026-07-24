@@ -9,9 +9,8 @@ createRoot(document.getElementById("root")!).render(
     <BrowserRouter>
       <Routes>
         <Route path="/" element={<Navigate to="/machines" replace />} />
-        <Route path="/machines" element={<App />} />
-        <Route path="/settings" element={<App />} />
-        <Route path="*" element={<Navigate to="/machines" replace />} />
+        {/* Single App instance so DNS-filter polling survives tab switches. */}
+        <Route path="/*" element={<App />} />
       </Routes>
     </BrowserRouter>
   </StrictMode>,

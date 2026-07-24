@@ -159,13 +159,11 @@ export function App() {
   const [busy, setBusy] = useState<Busy>(null);
   const [ready, setReady] = useState(false);
   const [creating, setCreating] = useState(false);
-  const [createOpen, setCreateOpen] = useState(false);
   const [installCmd, setInstallCmd] = useState<string | null>(null);
   const [installLoading, setInstallLoading] = useState(false);
   const { toasts, push, dismiss } = useToasts();
 
   const locked = busy !== null || creating || Boolean(settings?.demo);
-  const demo = Boolean(settings?.demo);
   const selected =
     selectedId && drawerEntry?.id === selectedId
       ? drawerEntry
@@ -227,7 +225,7 @@ export function App() {
     });
   }, []);
 
-  // DNS filter enable/disable runs in the background cron — poll while in flight.
+  // DNS filter enable/disable runs in the background — poll while in flight.
   useEffect(() => {
     const status = settings?.dnsFilterStatus;
     if (
@@ -236,16 +234,16 @@ export function App() {
     ) {
       return;
     }
-    const id = window.setInterval(() => {
+    const tick = () => {
       void api
         .settings()
-        .then((s) => {
-          setSettings(s);
-        })
+        .then((s) => setSettings(s))
         .catch(() => {
           /* ignore transient poll errors */
         });
-    }, 3000);
+    };
+    tick();
+    const id = window.setInterval(tick, 1500);
     return () => window.clearInterval(id);
   }, [settings?.dnsFilterStatus]);
 
@@ -348,7 +346,6 @@ export function App() {
     try {
       const r = await api.createNode(name);
       setNewName("");
-      setCreateOpen(false);
       const list = await refresh();
       const created =
         list.find((e) => e.kind === "node" && e.id === r.node.id) ??
@@ -421,39 +418,7 @@ export function App() {
       </header>
 
       {tab === "machines" && (
-        <>
-          <section className="panel">
-            <div className="machines-toolbar">
-              <div className="search-wrap">
-                <Search size={15} strokeWidth={2.25} aria-hidden />
-                <input
-                  type="search"
-                  placeholder="Search machines…"
-                  value={search}
-                  onChange={(e) => {
-                    const value = e.target.value;
-                    patchParams((next) => {
-                      if (value) next.set("q", value);
-                      else next.delete("q");
-                    });
-                  }}
-                  disabled={!ready}
-                />
-              </div>
-              <button
-                className="btn btn-primary"
-                disabled={locked}
-                onClick={() => {
-                  setNewName("");
-                  setCreateOpen(true);
-                }}
-              >
-                Create node
-              </button>
-            </div>
-          </section>
-
-          <section className="panel" aria-busy={!ready}>
+        <section className="panel" aria-busy={!ready}>
             <div className="panel-head">
               <h2>
                 Machines{" "}
@@ -509,6 +474,46 @@ export function App() {
                   ) : (
                     <RefreshCw size={15} strokeWidth={2.25} aria-hidden />
                   )}
+                </button>
+              </div>
+            </div>
+
+            <div className="machines-toolbar">
+              <div className="search-wrap">
+                <Search size={15} strokeWidth={2.25} aria-hidden />
+                <input
+                  type="search"
+                  placeholder="Search machines…"
+                  value={search}
+                  onChange={(e) => {
+                    const value = e.target.value;
+                    patchParams((next) => {
+                      if (value) next.set("q", value);
+                      else next.delete("q");
+                    });
+                  }}
+                  disabled={!ready}
+                />
+              </div>
+              <div className="create-inline">
+                <input
+                  id="new-node"
+                  type="text"
+                  value={newName}
+                  placeholder="New node name"
+                  disabled={locked}
+                  aria-label="New node name"
+                  onChange={(e) => setNewName(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && newName.trim()) void createNode();
+                  }}
+                />
+                <button
+                  className="btn btn-primary"
+                  disabled={locked || !newName.trim()}
+                  onClick={() => void createNode()}
+                >
+                  {creating ? <Spinner label="Creating…" /> : "Create node"}
                 </button>
               </div>
             </div>
@@ -633,7 +638,6 @@ export function App() {
               </div>
             )}
           </section>
-        </>
       )}
 
       {tab === "settings" && (
@@ -849,57 +853,6 @@ export function App() {
             </div>
           )}
         </section>
-      )}
-
-      {createOpen && (
-        <div
-          className="modal-backdrop"
-          onClick={() => {
-            if (!creating) setCreateOpen(false);
-          }}
-        >
-          <div
-            className="modal"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="create-node-title"
-            onClick={(ev) => ev.stopPropagation()}
-          >
-            <h3 id="create-node-title">Create mesh node</h3>
-            <div className="field">
-              <label htmlFor="new-node">Name</label>
-              <input
-                id="new-node"
-                type="text"
-                value={newName}
-                placeholder="edge-1"
-                autoFocus
-                disabled={creating}
-                onChange={(e) => setNewName(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" && newName.trim()) void createNode();
-                  if (e.key === "Escape" && !creating) setCreateOpen(false);
-                }}
-              />
-            </div>
-            <div className="row-actions modal-actions">
-              <button
-                className="btn btn-ghost"
-                disabled={creating}
-                onClick={() => setCreateOpen(false)}
-              >
-                Cancel
-              </button>
-              <button
-                className="btn btn-primary"
-                disabled={creating || !newName.trim()}
-                onClick={() => void createNode()}
-              >
-                {creating ? <Spinner label="Creating…" /> : "Create"}
-              </button>
-            </div>
-          </div>
-        </div>
       )}
 
       {drawerEntry && (

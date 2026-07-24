@@ -1,4 +1,4 @@
-/** Shared app env for Bun (Coolify) and local dev. */
+/** Shared app env for Bun server and local dev. */
 
 import type { Low } from "lowdb";
 

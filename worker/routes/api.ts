@@ -9,6 +9,7 @@ import {
   getSettings,
   markCleanupRan,
   markDnsSynced,
+  processDnsFilterTick,
   updateSettings,
 } from "../cf/dns-filter";
 import {
@@ -41,7 +42,7 @@ api.get("/settings", async (c) => {
   const cf = createCfClient(c.env);
   const [settings, account] = await Promise.all([
     getSettings(c.env),
-    fetchAccountInfo(cf),
+    fetchAccountInfo(cf, c.env.CLOUDFLARE_EMAIL),
   ]);
   return c.json({
     ...settings,
@@ -68,8 +69,18 @@ api.patch("/settings", async (c) => {
     await markDnsSynced(c.env);
   }
 
+  const filterTouched =
+    body.dnsFilterEnabled !== undefined || body.dnsFilterUrl !== undefined;
+  if (filterTouched) {
+    const cf = createCfClient(c.env);
+    // Advance filter status immediately instead of waiting for the 60s cron.
+    void processDnsFilterTick(cf, c.env).catch((err) =>
+      console.error("meshflare dns filter tick", err),
+    );
+  }
+
   const cf = createCfClient(c.env);
-  const account = await fetchAccountInfo(cf);
+  const account = await fetchAccountInfo(cf, c.env.CLOUDFLARE_EMAIL);
   return c.json({
     ...(await getSettings(c.env)),
     accountName: account.name,

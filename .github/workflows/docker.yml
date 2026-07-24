@@ -75,13 +75,13 @@ jobs:
     if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
     runs-on: ubuntu-latest
     steps:
-      - name: Trigger Coolify deploy
+      - name: Trigger deploy webhook
         env:
-          WEBHOOK_URL: ${{ secrets.COOLIFY_WEBHOOK }}
-          WEBHOOK_TOKEN: ${{ secrets.COOLIFY_TOKEN }}
+          WEBHOOK_URL: ${{ secrets.WEBHOOK_URL }}
+          WEBHOOK_TOKEN: ${{ secrets.WEBHOOK_TOKEN }}
         run: |
           if [ -z "$WEBHOOK_URL" ] || [ -z "$WEBHOOK_TOKEN" ]; then
-            echo "COOLIFY_WEBHOOK / COOLIFY_TOKEN not set; skipping."
+            echo "WEBHOOK_URL / WEBHOOK_TOKEN not set; skipping."
             exit 0
           fi
           response="$(mktemp)"

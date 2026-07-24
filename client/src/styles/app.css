@@ -189,6 +189,7 @@ a {
   gap: 0.75rem;
   align-items: center;
   justify-content: space-between;
+  margin: 0 0 1rem;
 }
 
 .search-wrap {
@@ -218,6 +219,21 @@ a {
   flex-wrap: wrap;
   gap: 0.45rem;
   align-items: center;
+}
+
+.create-inline input {
+  min-width: 10rem;
+  flex: 1 1 10rem;
+  border: 1px solid var(--line);
+  background: var(--bg0);
+  color: var(--text);
+  border-radius: 10px;
+  padding: 0.5rem 0.75rem;
+  outline: none;
+}
+
+.create-inline input:focus {
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--line));
 }
 
 .copy-chip {
