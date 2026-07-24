@@ -4,9 +4,12 @@ Self-hostable [Cloudflare](https://www.cloudflare.com/) Mesh manager (Bun + Hono
 
 **Demo (read-only):** [https://meshflare.workers.dev](https://meshflare.workers.dev)
 
-![meshflare demo — machines (light)](docs/screenshots/demo-machines-light.png)
-
-![meshflare demo — machines (dark)](docs/screenshots/demo-machines-dark.png)
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/demo-machines-dark.png">
+    <img alt="meshflare demo — machines" src="docs/screenshots/demo-machines-light.png" width="800">
+  </picture>
+</p>
 
 ## Features
 
