@@ -356,6 +356,12 @@ a {
   margin-bottom: 0.85rem;
 }
 
+.route-row > .split-item-actions {
+  flex-direction: row;
+  flex-wrap: nowrap;
+  flex-shrink: 0;
+}
+
 .split-add-button {
   width: 100%;
 }

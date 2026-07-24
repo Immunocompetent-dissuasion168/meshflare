@@ -951,7 +951,7 @@ export function App() {
                             <span className="mono">{item.address ?? item.host}</span>
                             {item.description && <span className="hint">{item.description}</span>}
                           </div>
-                          <div className="row-actions">
+                          <div className="row-actions split-item-actions">
                             <button
                               type="button"
                               className="btn btn-icon"
