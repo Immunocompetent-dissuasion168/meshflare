@@ -22,6 +22,14 @@ function parseFqdnFromTraffic(traffic: string | undefined): string | null {
   return m?.[1] ?? null;
 }
 
+function managedHostKey(rule: GatewayRule, rulePrefix: string): string | null {
+  const fromTraffic = parseFqdnFromTraffic(rule.traffic);
+  if (fromTraffic) return fromTraffic;
+  const prefix = `${rulePrefix}: `;
+  if (rule.name?.startsWith(prefix)) return rule.name.slice(prefix.length).trim() || null;
+  return null;
+}
+
 export async function listGatewayRules(cf: CloudflareClient): Promise<GatewayRule[]> {
   const res = await cf.request<GatewayRule[]>("GET", cf.accountPath("/gateway/rules"));
   return res.result ?? [];
@@ -172,10 +180,15 @@ export type DnsSyncStats = {
  * Sync Gateway DNS overrides for *.<suffix> — only when an IP is known.
  * Removes all meshflare-managed override rules that are no longer desired,
  * including leftovers from a previous suffix.
+ *
+ * `purgeHosts` forces removal of specific hostnames even if inventory still
+ * briefly reports the old name (e.g. right after a device rename).
+ * `forceDesired` injects host→IP mappings that must exist after rename.
  */
 export async function syncMeshDns(
   cf: CloudflareClient,
   env: Env,
+  options?: { purgeHosts?: string[]; forceDesired?: Map<string, string> },
 ): Promise<DnsSyncStats> {
   const suffix = await getMeshSuffix(env);
   const inventory = await buildMeshInventory(cf, env);
@@ -187,13 +200,21 @@ export async function syncMeshDns(
     if (!desired.has(host)) desired.set(host, entry.ipv4);
   }
 
+  for (const host of options?.purgeHosts ?? []) {
+    desired.delete(host);
+  }
+  for (const [host, ipv4] of options?.forceDesired ?? []) {
+    desired.set(host, ipv4);
+  }
+
   const rules = await listGatewayRules(cf);
   const managed = new Map<string, GatewayRule>();
   for (const rule of rules) {
     if (rule.action !== "override") continue;
     if (!rule.filters?.includes("dns")) continue;
     if (!rule.name?.startsWith(env.MESH_RULE_PREFIX)) continue;
-    const fqdn = parseFqdnFromTraffic(rule.traffic) ?? rule.name;
+    const fqdn = managedHostKey(rule, env.MESH_RULE_PREFIX);
+    if (!fqdn) continue;
     managed.set(fqdn, rule);
   }
 
@@ -229,6 +250,69 @@ export async function syncMeshDns(
     skipped,
     desired: desired.size,
   };
+}
+
+/** After rename: drop old hostnames, then full sync so new .mesh overrides apply. */
+export async function syncMeshDnsAfterRename(
+  cf: CloudflareClient,
+  env: Env,
+  rename: {
+    renamed: { from: string; to: string };
+    displaced?: { from: string; to: string };
+  },
+): Promise<DnsSyncStats> {
+  const suffix = await getMeshSuffix(env);
+  const purgeHosts: string[] = [];
+  const forceDesired = new Map<string, string>();
+
+  const fromHost = meshHostname(rename.renamed.from, suffix);
+  const toHost = meshHostname(rename.renamed.to, suffix);
+  if (fromHost !== toHost) purgeHosts.push(fromHost);
+
+  if (rename.displaced) {
+    const dFrom = meshHostname(rename.displaced.from, suffix);
+    const dTo = meshHostname(rename.displaced.to, suffix);
+    if (dFrom !== dTo) purgeHosts.push(dFrom);
+  }
+
+  const inventory = await buildMeshInventory(cf, env);
+  const match =
+    inventory.find((e) => e.name.trim().toLowerCase() === rename.renamed.to.trim().toLowerCase()) ??
+    inventory.find((e) => e.name.trim().toLowerCase() === rename.renamed.from.trim().toLowerCase());
+
+  if (match?.ipv4 && fromHost !== toHost) {
+    forceDesired.set(toHost, match.ipv4);
+  }
+
+  if (rename.displaced) {
+    const dFrom = meshHostname(rename.displaced.from, suffix);
+    const dTo = meshHostname(rename.displaced.to, suffix);
+    if (dFrom !== dTo) {
+      const displacedMatch =
+        inventory.find(
+          (e) => e.name.trim().toLowerCase() === rename.displaced!.to.trim().toLowerCase(),
+        ) ??
+        inventory.find(
+          (e) => e.name.trim().toLowerCase() === rename.displaced!.from.trim().toLowerCase(),
+        );
+      if (displacedMatch?.ipv4) forceDesired.set(dTo, displacedMatch.ipv4);
+    }
+  }
+
+  return syncMeshDns(cf, env, { purgeHosts, forceDesired });
+}
+
+/** After delete: purge that machine's hostname even if CF inventory lags. */
+export async function syncMeshDnsAfterDelete(
+  cf: CloudflareClient,
+  env: Env,
+  entry: { name: string; meshHostname?: string | null },
+): Promise<DnsSyncStats> {
+  const suffix = await getMeshSuffix(env);
+  const purgeHosts = new Set<string>();
+  purgeHosts.add(meshHostname(entry.name, suffix));
+  if (entry.meshHostname?.trim()) purgeHosts.add(entry.meshHostname.trim());
+  return syncMeshDns(cf, env, { purgeHosts: [...purgeHosts] });
 }
 
 export { slugifyName, meshHostname };

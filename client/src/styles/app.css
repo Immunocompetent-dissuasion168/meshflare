@@ -740,6 +740,22 @@ th.sorted {
   color: var(--muted);
 }
 
+.machine-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.9rem;
+}
+
+.machine-status .status-dot {
+  width: 0.5rem;
+  height: 0.5rem;
+}
+
+.machine-status .status-dot::after {
+  display: none;
+}
+
 .status-label .hint {
   font-size: inherit;
   font-weight: 400;

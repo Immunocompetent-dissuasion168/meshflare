@@ -3,7 +3,7 @@ import { HTTPException } from "hono/http-exception";
 import { fetchAccountInfo } from "../cf/account";
 import { cleanupOfflineDevices } from "../cf/cleanup";
 import { createCfClient, CloudflareApiError } from "../cf/client";
-import { buildMeshInventory, syncMeshDns } from "../cf/dns";
+import { buildMeshInventory, syncMeshDns, syncMeshDnsAfterDelete, syncMeshDnsAfterRename } from "../cf/dns";
 import { getMeshNodeToken } from "../cf/mesh";
 import {
   getSettings,
@@ -102,7 +102,7 @@ api.patch("/mesh/:kind/:id", async (c) => {
 
   const cf = createCfClient(c.env);
   const result = await renameWithCollisionHandling(cf, kind, c.req.param("id"), body.name);
-  const dns = await syncMeshDns(cf, c.env);
+  const dns = await syncMeshDnsAfterRename(cf, c.env, result);
   await markDnsSynced(c.env);
   return c.json({ ...result, dns });
 });
@@ -113,8 +113,13 @@ api.delete("/mesh/:kind/:id", async (c) => {
     throw new HTTPException(400, { message: "kind must be node or device" });
   }
   const cf = createCfClient(c.env);
-  await deleteMeshEntry(cf, kind, c.req.param("id"));
-  const dns = await syncMeshDns(cf, c.env);
+  const id = c.req.param("id");
+  const inventory = await buildMeshInventory(cf, c.env);
+  const entry = inventory.find((e) => e.kind === kind && e.id === id);
+  await deleteMeshEntry(cf, kind, id);
+  const dns = entry
+    ? await syncMeshDnsAfterDelete(cf, c.env, entry)
+    : await syncMeshDns(cf, c.env);
   await markDnsSynced(c.env);
   return c.json({ ok: true, dns });
 });

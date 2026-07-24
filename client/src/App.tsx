@@ -15,6 +15,7 @@ import {
   copyText,
   isNodeOffline,
   dnsFilterStatusMeta,
+  machineStatusMeta,
   warpConnectorInstallCommand,
 } from "./lib/warp";
 
@@ -224,6 +225,28 @@ export function App() {
       });
     });
   }, []);
+
+  // DNS filter enable/disable runs in the background cron — poll while in flight.
+  useEffect(() => {
+    const status = settings?.dnsFilterStatus;
+    if (
+      !status ||
+      !["pending_enable", "syncing", "pending_refresh", "pending_disable"].includes(status)
+    ) {
+      return;
+    }
+    const id = window.setInterval(() => {
+      void api
+        .settings()
+        .then((s) => {
+          setSettings(s);
+        })
+        .catch(() => {
+          /* ignore transient poll errors */
+        });
+    }, 3000);
+    return () => window.clearInterval(id);
+  }, [settings?.dnsFilterStatus]);
 
   useEffect(() => {
     if (!selectedId) {
@@ -489,7 +512,7 @@ export function App() {
                 <table>
                   <thead>
                     <tr>
-                      {["Name", "Type", ".mesh", "IPv4", "Last seen", "Status"].map((label) => (
+                      {["Name", "Type", "Domain", "IPv4", "Last seen", "Status"].map((label) => (
                         <th key={label}>{label}</th>
                       ))}
                     </tr>
@@ -522,7 +545,7 @@ export function App() {
                         [
                           ["name", "Name"],
                           ["kind", "Type"],
-                          ["meshHostname", `.${settings?.meshSuffix ?? "mesh"}`],
+                          ["meshHostname", "Domain"],
                           ["ipv4", "IPv4"],
                           ["lastSeenAt", "Last seen"],
                           ["status", "Status"],
@@ -582,7 +605,21 @@ export function App() {
                           />
                         </td>
                         <td>{formatSeen(e.lastSeenAt)}</td>
-                        <td>{e.status}</td>
+                        <td>
+                          {(() => {
+                            const meta = machineStatusMeta(e.status);
+                            return (
+                              <span className="machine-status">
+                                <span
+                                  className="status-dot"
+                                  data-tone={meta.tone}
+                                  aria-hidden
+                                />
+                                {meta.label}
+                              </span>
+                            );
+                          })()}
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -910,7 +947,7 @@ export function App() {
                   void run("rename", async () => {
                     const r = await api.rename(drawerEntry.kind, drawerEntry.id, renameValue.trim());
                     push(
-                      r.notice ?? `Renamed to "${renameValue.trim()}".`,
+                      r.notice ?? `Renamed to "${renameValue.trim()}". DNS updated.`,
                       r.notice ? "info" : "success",
                     );
                     closeDrawer();
@@ -1008,7 +1045,7 @@ export function App() {
                   if (!confirm(`Delete ${label} "${drawerEntry.name}"?`)) return;
                   void run("delete", async () => {
                     await api.remove(drawerEntry.kind, drawerEntry.id);
-                    push(`Deleted ${label} "${drawerEntry.name}".`, "success");
+                    push(`Deleted ${label} "${drawerEntry.name}". DNS updated.`, "success");
                     closeDrawer();
                   });
                 }}

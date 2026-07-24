@@ -26,6 +26,24 @@ export function isNodeOffline(status: string): boolean {
   return s !== "healthy" && s !== "up";
 }
 
+/** Colored status pill for machine inventory rows. */
+export function machineStatusMeta(status: string): {
+  tone: "off" | "ok" | "sync" | "warn" | "danger";
+  label: string;
+} {
+  const label = status.trim() || "unknown";
+  const s = label.toLowerCase();
+  if (s === "healthy" || s === "up") return { tone: "ok", label };
+  if (s === "registered" || s === "active" || s === "connected") return { tone: "ok", label };
+  if (s === "down" || s === "inactive" || s === "offline" || s === "disconnected") {
+    return { tone: "danger", label };
+  }
+  if (s.includes("pending") || s.includes("connect") || s.includes("sync")) {
+    return { tone: "sync", label };
+  }
+  return { tone: "off", label };
+}
+
 /** Debian/Ubuntu one-liner: install cloudflare-warp + enroll connector + connect. */
 export function warpConnectorInstallCommand(token: string): string {
   return [
