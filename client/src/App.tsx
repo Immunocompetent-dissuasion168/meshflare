@@ -100,6 +100,23 @@ function KindBadge({ kind }: { kind: "node" | "device" }) {
   );
 }
 
+function MachineKindStatus({ entry, size = 14 }: { entry: MeshEntry; size?: number }) {
+  const meta = machineStatusMeta(entry.status);
+  const Icon = entry.kind === "node" ? Server : Smartphone;
+  const kind = entry.kind === "node" ? "Node" : "Device";
+  return (
+    <span
+      className={`machine-kind-status ${entry.kind}`}
+      data-tone={meta.tone}
+      data-tip={`${kind} · ${meta.label}`}
+      tabIndex={0}
+      aria-label={`${kind}, ${meta.label}`}
+    >
+      <Icon size={size} strokeWidth={2.25} aria-hidden />
+    </span>
+  );
+}
+
 function Spinner({ label }: { label: string }) {
   return (
     <span className="btn-spin">
@@ -651,21 +668,7 @@ export function App() {
                       >
                         <td>
                           <strong className="name-cell">
-                            {(() => {
-                              const meta = machineStatusMeta(e.status);
-                              const Icon = e.kind === "node" ? Server : Smartphone;
-                              return (
-                                <span
-                                  className={`machine-kind-status ${e.kind}`}
-                                  data-tone={meta.tone}
-                                  data-tip={`${e.kind === "node" ? "Node" : "Device"} · ${meta.label}`}
-                                  tabIndex={0}
-                                  aria-label={`${e.kind === "node" ? "Node" : "Device"}, ${meta.label}`}
-                                >
-                                  <Icon size={14} strokeWidth={2.25} aria-hidden />
-                                </span>
-                              );
-                            })()}
+                            <MachineKindStatus entry={e} />
                             {e.name}
                           </strong>
                         </td>
@@ -1126,11 +1129,7 @@ export function App() {
           <aside className="drawer" onClick={(ev) => ev.stopPropagation()}>
             <div className="drawer-head">
               <h3 className="drawer-title">
-                {drawerEntry.kind === "node" ? (
-                  <Server size={18} strokeWidth={2.25} className="kind-icon node" aria-hidden />
-                ) : (
-                  <Smartphone size={18} strokeWidth={2.25} className="kind-icon device" aria-hidden />
-                )}
+                <MachineKindStatus entry={drawerEntry} size={18} />
                 {drawerEntry.name}
               </h3>
               <button
@@ -1145,8 +1144,6 @@ export function App() {
               </button>
             </div>
             <div className="meta">
-              <KindBadge kind={drawerEntry.kind} />
-              {" · "}
               <span className="mono">{drawerEntry.id.slice(0, 8)}…</span>
             </div>
 

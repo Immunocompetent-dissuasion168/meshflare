@@ -1042,12 +1042,12 @@ th.sorted {
 .machine-kind-status::after {
   content: attr(data-tip);
   position: absolute;
-  left: 50%;
-  bottom: calc(100% + 0.55rem);
+  left: calc(100% + 0.6rem);
+  top: 50%;
   z-index: 15;
   width: max-content;
   max-width: 13rem;
-  transform: translateX(-50%) translateY(0.2rem);
+  transform: translateY(-50%) translateX(-0.2rem);
   border: 1px solid var(--line);
   border-radius: 6px;
   background: var(--bg1);
@@ -1064,7 +1064,7 @@ th.sorted {
 .machine-kind-status:hover::after,
 .machine-kind-status:focus-visible::after {
   opacity: 1;
-  transform: translateX(-50%) translateY(0);
+  transform: translateY(-50%) translateX(0);
 }
 
 .status-label .hint {
