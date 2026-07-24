@@ -193,16 +193,16 @@ export function App() {
 
   function closeDrawer() {
     setDrawerOpen(false);
-  }
-
-  function onDrawerTransitionEnd(e: TransitionEvent<HTMLDivElement>) {
-    if (e.propertyName !== "opacity" || drawerOpen) return;
-    setDrawerEntry(null);
     if (selectedId) {
       patchParams((next) => {
         next.delete("id");
       });
     }
+  }
+
+  function onDrawerTransitionEnd(e: TransitionEvent<HTMLDivElement>) {
+    if (e.propertyName !== "opacity" || drawerOpen) return;
+    setDrawerEntry(null);
   }
 
   async function refresh() {
@@ -231,11 +231,10 @@ export function App() {
       return;
     }
     const found = entries.find((e) => e.id === selectedId);
-    if (found) {
-      setDrawerEntry(found);
-      setRenameValue(found.name);
-      requestAnimationFrame(() => setDrawerOpen(true));
-    }
+    if (!found) return;
+    setDrawerEntry((prev) => (prev?.id === found.id ? prev : found));
+    setRenameValue(found.name);
+    requestAnimationFrame(() => setDrawerOpen(true));
   }, [selectedId, entries]);
 
   useEffect(() => {
