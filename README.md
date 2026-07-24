@@ -2,7 +2,7 @@
 
 Self-hostable [Cloudflare](https://www.cloudflare.com/) Mesh manager (Bun + Hono). One Docker image — UI, API, cron, and WireGuard extract.
 
-**Demo (read-only):** [https://meshflare.workers.dev](https://meshflare.workers.dev)
+**Demo (read-only):** [https://meshflare.wastu.workers.dev](https://meshflare.wastu.workers.dev)
 
 <p align="center">
   <picture>
@@ -64,4 +64,4 @@ The read-only demo is a Workers + static assets deploy (`wrangler.demo.jsonc`):
 bun run deploy:demo
 ```
 
-Requires `CLOUDFLARE_API_TOKEN` / account access for Wrangler. Default workers.dev host: `https://meshflare.workers.dev`.
+Requires `CLOUDFLARE_API_TOKEN` / account access for Wrangler. Default workers.dev host: `https://meshflare.wastu.workers.dev`.

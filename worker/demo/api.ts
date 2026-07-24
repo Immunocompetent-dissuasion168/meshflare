@@ -1,9 +1,9 @@
 import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
 import {
-  DEMO_ENTRIES,
   DEMO_READ_ONLY,
-  DEMO_SETTINGS,
+  buildDemoEntries,
+  buildDemoSettings,
   isDemoMode,
 } from "../demo/fixtures";
 
@@ -22,9 +22,9 @@ demoApi.get("/health", (c) =>
   c.json({ ok: true, service: "meshflare", demo: true }),
 );
 
-demoApi.get("/settings", (c) => c.json(DEMO_SETTINGS));
+demoApi.get("/settings", (c) => c.json(buildDemoSettings()));
 
-demoApi.get("/mesh", (c) => c.json({ entries: DEMO_ENTRIES, demo: true }));
+demoApi.get("/mesh", (c) => c.json({ entries: buildDemoEntries(), demo: true }));
 
 demoApi.all("/*", (c) => {
   if (c.req.method === "GET" || c.req.method === "HEAD") {
