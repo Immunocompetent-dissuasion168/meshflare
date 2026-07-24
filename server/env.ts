@@ -1,4 +1,5 @@
 import { join } from "node:path";
+import { isDemoMode } from "../worker/demo/fixtures";
 import type { Env } from "../worker/types";
 import { openAppDb, openObjectCache } from "./store";
 
@@ -10,12 +11,17 @@ function required(name: string): string {
 
 export async function loadEnv(): Promise<Env> {
   const dataDir = process.env.DATA_DIR?.trim() || "./data";
+  const demo = isDemoMode({ DEMO_MODE: process.env.DEMO_MODE });
+
   return {
     DATA_DIR: dataDir,
     PORT: process.env.PORT?.trim() || "3000",
+    DEMO_MODE: demo ? "true" : process.env.DEMO_MODE?.trim(),
     DB: await openAppDb(join(dataDir, "db.json")),
     DNS_FILTER_CACHE: openObjectCache(join(dataDir, "dns-filter")),
-    CLOUDFLARE_ACCOUNT_ID: required("CLOUDFLARE_ACCOUNT_ID"),
+    CLOUDFLARE_ACCOUNT_ID: demo
+      ? process.env.CLOUDFLARE_ACCOUNT_ID?.trim() || "demo"
+      : required("CLOUDFLARE_ACCOUNT_ID"),
     CLOUDFLARE_API_TOKEN: process.env.CLOUDFLARE_API_TOKEN,
     CLOUDFLARE_API_KEY: process.env.CLOUDFLARE_API_KEY,
     CLOUDFLARE_EMAIL: process.env.CLOUDFLARE_EMAIL,

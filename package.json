@@ -6,9 +6,12 @@
   "scripts": {
     "dev": "bun run --hot server/index.ts",
     "dev:client": "vite",
+    "dev:demo": "DEMO_MODE=true bun run --hot server/index.ts",
     "build": "vite build",
     "start": "bun run server/index.ts",
-    "typecheck": "tsc --noEmit"
+    "start:demo": "DEMO_MODE=true bun run server/index.ts",
+    "typecheck": "tsc --noEmit",
+    "deploy:demo": "bun run build && bunx wrangler deploy -c wrangler.demo.jsonc"
   },
   "dependencies": {
     "hono": "^4.12.31",
@@ -24,6 +27,7 @@
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^6.0.4",
     "typescript": "^5.9.3",
-    "vite": "^8.1.5"
+    "vite": "^8.1.5",
+    "wrangler": "4"
   }
 }
