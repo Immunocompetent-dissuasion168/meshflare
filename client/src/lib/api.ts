@@ -86,7 +86,16 @@ export const api = {
       method: "POST",
     }),
   cleanup: () =>
-    request<{ cleanup: unknown; lastCleanupAt?: string }>("/api/mesh/cleanup", {
+    request<{
+      cleanup: {
+        scanned: number;
+        deleted: number;
+        skippedConnector: number;
+        skippedRecent: number;
+        deletedNames: string[];
+      };
+      lastCleanupAt?: string;
+    }>("/api/mesh/cleanup", {
       method: "POST",
     }),
   downloadWireGuard: async (id: string, filename: string) => {

@@ -1,11 +1,14 @@
-import { useEffect, useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useState, useTransition, type TransitionEvent } from "react";
 import {
   Loader2,
+  RefreshCw,
   Search,
   Server,
   Settings as SettingsIcon,
   Smartphone,
+  X,
 } from "lucide-react";
+import { Link, NavLink, useLocation, useSearchParams } from "react-router";
 import { api, type MeshEntry, type Settings } from "./lib/api";
 import { ToastStack, useToasts } from "./lib/toasts";
 import {
@@ -30,6 +33,24 @@ type Busy =
   | "delete"
   | "domain"
   | "filter-url";
+
+const SORT_KEYS: SortKey[] = [
+  "name",
+  "kind",
+  "meshHostname",
+  "ipv4",
+  "lastSeenAt",
+  "status",
+  "createdAt",
+];
+
+function parseKind(value: string | null): KindFilter {
+  return value === "node" || value === "device" ? value : "all";
+}
+
+function parseSort(value: string | null): SortKey {
+  return value && SORT_KEYS.includes(value as SortKey) ? (value as SortKey) : "createdAt";
+}
 
 function formatSeen(iso: string | null | undefined, empty = "—"): string {
   if (!iso) return empty;
@@ -114,28 +135,75 @@ function CopyValue({
 }
 
 export function App() {
-  const [tab, setTab] = useState<Tab>("machines");
+  const location = useLocation();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const tab: Tab = location.pathname.startsWith("/settings") ? "settings" : "machines";
+
+  const kindFilter = parseKind(searchParams.get("kind"));
+  const search = searchParams.get("q") ?? "";
+  const sortKey = parseSort(searchParams.get("sort"));
+  const sortDir = searchParams.get("dir") === "asc" ? "asc" : "desc";
+  const selectedId = searchParams.get("id");
+
   const [entries, setEntries] = useState<MeshEntry[]>([]);
   const [settings, setSettings] = useState<Settings | null>(null);
-  const [selected, setSelected] = useState<MeshEntry | null>(null);
+  const [drawerEntry, setDrawerEntry] = useState<MeshEntry | null>(null);
+  const [drawerOpen, setDrawerOpen] = useState(false);
   const [newName, setNewName] = useState("");
   const [renameValue, setRenameValue] = useState("");
   const [offlineDays, setOfflineDays] = useState(7);
   const [meshSuffixDraft, setMeshSuffixDraft] = useState("mesh");
   const [filterUrlDraft, setFilterUrlDraft] = useState("https://small.oisd.nl/");
-  const [search, setSearch] = useState("");
   const [, startTransition] = useTransition();
   const [busy, setBusy] = useState<Busy>(null);
   const [ready, setReady] = useState(false);
   const [creating, setCreating] = useState(false);
+  const [createOpen, setCreateOpen] = useState(false);
   const [installCmd, setInstallCmd] = useState<string | null>(null);
   const [installLoading, setInstallLoading] = useState(false);
-  const [kindFilter, setKindFilter] = useState<KindFilter>("all");
-  const [sortKey, setSortKey] = useState<SortKey>("createdAt");
-  const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
   const { toasts, push, dismiss } = useToasts();
 
   const locked = busy !== null || creating;
+  const selected =
+    selectedId && drawerEntry?.id === selectedId
+      ? drawerEntry
+      : selectedId
+        ? (entries.find((e) => e.id === selectedId) ?? drawerEntry)
+        : drawerEntry;
+
+  function patchParams(mutate: (next: URLSearchParams) => void) {
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        mutate(next);
+        return next;
+      },
+      { replace: true },
+    );
+  }
+
+  function openEntry(entry: MeshEntry) {
+    setDrawerEntry(entry);
+    setRenameValue(entry.name);
+    patchParams((next) => {
+      next.set("id", entry.id);
+    });
+    requestAnimationFrame(() => setDrawerOpen(true));
+  }
+
+  function closeDrawer() {
+    setDrawerOpen(false);
+  }
+
+  function onDrawerTransitionEnd(e: TransitionEvent<HTMLDivElement>) {
+    if (e.propertyName !== "opacity" || drawerOpen) return;
+    setDrawerEntry(null);
+    if (selectedId) {
+      patchParams((next) => {
+        next.delete("id");
+      });
+    }
+  }
 
   async function refresh() {
     const [mesh, s] = await Promise.all([api.listMesh(), api.settings()]);
@@ -156,6 +224,19 @@ export function App() {
       });
     });
   }, []);
+
+  useEffect(() => {
+    if (!selectedId) {
+      if (drawerOpen) setDrawerOpen(false);
+      return;
+    }
+    const found = entries.find((e) => e.id === selectedId);
+    if (found) {
+      setDrawerEntry(found);
+      setRenameValue(found.name);
+      requestAnimationFrame(() => setDrawerOpen(true));
+    }
+  }, [selectedId, entries]);
 
   useEffect(() => {
     if (!selected || selected.kind !== "node" || !isNodeOffline(selected.status)) {
@@ -208,12 +289,21 @@ export function App() {
   }, [entries, kindFilter, sortKey, sortDir, search]);
 
   function toggleSort(key: SortKey) {
-    if (sortKey === key) {
-      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
-    } else {
-      setSortKey(key);
-      setSortDir(key === "name" || key === "kind" || key === "status" ? "asc" : "desc");
-    }
+    patchParams((next) => {
+      if (sortKey === key) {
+        next.set("dir", sortDir === "asc" ? "desc" : "asc");
+      } else {
+        next.set("sort", key);
+        next.set(
+          "dir",
+          key === "name" || key === "kind" || key === "status" ? "asc" : "desc",
+        );
+      }
+      if (next.get("sort") === "createdAt") next.delete("sort");
+      if (next.get("dir") === "desc" && (next.get("sort") ?? "createdAt") === "createdAt") {
+        next.delete("dir");
+      }
+    });
   }
 
   async function run(key: Exclude<Busy, null>, action: () => Promise<void>) {
@@ -235,6 +325,7 @@ export function App() {
     try {
       const r = await api.createNode(name);
       setNewName("");
+      setCreateOpen(false);
       const list = await refresh();
       const created =
         list.find((e) => e.kind === "node" && e.id === r.node.id) ??
@@ -252,8 +343,7 @@ export function App() {
           isConnector: true,
         } satisfies MeshEntry);
 
-      setSelected(created);
-      setRenameValue(created.name);
+      openEntry(created);
       push(r.notice ?? `Created node "${r.node.name}".`, r.notice ? "info" : "success");
     } catch (e) {
       push(e instanceof Error ? e.message : String(e), "error");
@@ -276,28 +366,29 @@ export function App() {
     <div className="app">
       <header className="top">
         <div className="brand">
-          <h1>
-            mesh<span>flare</span>
-          </h1>
+          <Link to="/machines" className="brand-link" title="Machines">
+            <img src="/icon-192.png" alt="" className="brand-mark" width={32} height={32} />
+            <h1>
+              mesh<span>flare</span>
+            </h1>
+          </Link>
           <p className="account-line">{accountLine}</p>
         </div>
         <nav className="tabs" aria-label="Primary">
-          <button
-            type="button"
-            className={`tab ${tab === "machines" ? "active" : ""}`}
-            onClick={() => setTab("machines")}
+          <NavLink
+            to="/machines"
+            className={({ isActive }) => `tab ${isActive ? "active" : ""}`}
           >
             <Server size={14} strokeWidth={2.25} aria-hidden />
             Machines
-          </button>
-          <button
-            type="button"
-            className={`tab ${tab === "settings" ? "active" : ""}`}
-            onClick={() => setTab("settings")}
+          </NavLink>
+          <NavLink
+            to="/settings"
+            className={({ isActive }) => `tab ${isActive ? "active" : ""}`}
           >
             <SettingsIcon size={14} strokeWidth={2.25} aria-hidden />
             Settings
-          </button>
+          </NavLink>
         </nav>
       </header>
 
@@ -311,29 +402,26 @@ export function App() {
                   type="search"
                   placeholder="Search machines…"
                   value={search}
-                  onChange={(e) => setSearch(e.target.value)}
+                  onChange={(e) => {
+                    const value = e.target.value;
+                    patchParams((next) => {
+                      if (value) next.set("q", value);
+                      else next.delete("q");
+                    });
+                  }}
                   disabled={!ready}
                 />
               </div>
-              <div className="create-inline">
-                <input
-                  type="text"
-                  value={newName}
-                  placeholder="New node name"
-                  disabled={creating || locked}
-                  onChange={(e) => setNewName(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" && newName.trim()) void createNode();
-                  }}
-                />
-                <button
-                  className="btn btn-primary"
-                  disabled={creating || locked || !newName.trim()}
-                  onClick={() => void createNode()}
-                >
-                  {creating ? <Spinner label="Creating…" /> : "Create node"}
-                </button>
-              </div>
+              <button
+                className="btn btn-primary"
+                disabled={locked}
+                onClick={() => {
+                  setNewName("");
+                  setCreateOpen(true);
+                }}
+              >
+                Create node
+              </button>
             </div>
           </section>
 
@@ -354,7 +442,12 @@ export function App() {
                     type="button"
                     className={`btn ${kindFilter === value ? "btn-active" : ""}`}
                     disabled={!ready}
-                    onClick={() => setKindFilter(value)}
+                    onClick={() =>
+                      patchParams((next) => {
+                        if (value === "all") next.delete("kind");
+                        else next.set("kind", value);
+                      })
+                    }
                   >
                     {value === "node" ? (
                       <span className="filter-label">
@@ -372,15 +465,22 @@ export function App() {
                   </button>
                 ))}
                 <button
-                  className="btn"
+                  type="button"
+                  className="btn btn-icon"
                   disabled={locked}
+                  title="Refresh"
+                  aria-label="Refresh"
                   onClick={() =>
                     void run("refresh", async () => {
                       push("Refreshed.", "success");
                     })
                   }
                 >
-                  {busy === "refresh" ? <Spinner label="Refreshing…" /> : "Refresh"}
+                  {busy === "refresh" ? (
+                    <Loader2 size={15} strokeWidth={2.25} className="spin" aria-hidden />
+                  ) : (
+                    <RefreshCw size={15} strokeWidth={2.25} aria-hidden />
+                  )}
                 </button>
               </div>
             </div>
@@ -445,10 +545,7 @@ export function App() {
                       <tr
                         key={`${e.kind}-${e.id}`}
                         style={{ cursor: "pointer" }}
-                        onClick={() => {
-                          setSelected(e);
-                          setRenameValue(e.name);
-                        }}
+                        onClick={() => openEntry(e)}
                       >
                         <td>
                           <strong className="name-cell">
@@ -586,12 +683,7 @@ export function App() {
                   <span className="hint">{filterMeta.tip}</span>
                 </div>
                 <p className="hint">
-                  Account-wide Gateway block list from any domain-list URL
-                  (default{" "}
-                  <a href="https://small.oisd.nl/" target="_blank" rel="noreferrer">
-                    small.oisd.nl
-                  </a>
-                  ).
+                  Account-wide Gateway block list from any domain-list URL.
                   {filterMeta.tone === "ok" && settings.dnsFilterLastSyncedAt
                     ? ` Last refresh ${formatSeen(settings.dnsFilterLastSyncedAt)}.`
                     : null}
@@ -688,7 +780,23 @@ export function App() {
                       }
                       void run("cleanup", async () => {
                         const r = await api.cleanup();
-                        push(`Cleanup finished: ${JSON.stringify(r.cleanup)}`, "success");
+                        const c = r.cleanup;
+                        if (c.deleted === 0) {
+                          push(
+                            `Cleanup done — no devices offline longer than ${offlineDays} days (${c.scanned} scanned).`,
+                            "success",
+                          );
+                        } else {
+                          const names = c.deletedNames.slice(0, 3).join(", ");
+                          const more =
+                            c.deletedNames.length > 3
+                              ? ` +${c.deletedNames.length - 3} more`
+                              : "";
+                          push(
+                            `Cleanup deleted ${c.deleted} device${c.deleted === 1 ? "" : "s"}: ${names}${more}.`,
+                            "success",
+                          );
+                        }
                       });
                     }}
                   >
@@ -701,21 +809,88 @@ export function App() {
         </section>
       )}
 
-      {selected && (
-        <div className="drawer-backdrop" onClick={() => setSelected(null)}>
+      {createOpen && (
+        <div
+          className="modal-backdrop"
+          onClick={() => {
+            if (!creating) setCreateOpen(false);
+          }}
+        >
+          <div
+            className="modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="create-node-title"
+            onClick={(ev) => ev.stopPropagation()}
+          >
+            <h3 id="create-node-title">Create mesh node</h3>
+            <div className="field">
+              <label htmlFor="new-node">Name</label>
+              <input
+                id="new-node"
+                type="text"
+                value={newName}
+                placeholder="edge-1"
+                autoFocus
+                disabled={creating}
+                onChange={(e) => setNewName(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && newName.trim()) void createNode();
+                  if (e.key === "Escape" && !creating) setCreateOpen(false);
+                }}
+              />
+            </div>
+            <div className="row-actions modal-actions">
+              <button
+                className="btn btn-ghost"
+                disabled={creating}
+                onClick={() => setCreateOpen(false)}
+              >
+                Cancel
+              </button>
+              <button
+                className="btn btn-primary"
+                disabled={creating || !newName.trim()}
+                onClick={() => void createNode()}
+              >
+                {creating ? <Spinner label="Creating…" /> : "Create"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {drawerEntry && (
+        <div
+          className={`drawer-backdrop${drawerOpen ? " is-open" : ""}`}
+          onClick={closeDrawer}
+          onTransitionEnd={onDrawerTransitionEnd}
+        >
           <aside className="drawer" onClick={(ev) => ev.stopPropagation()}>
-            <h3 className="drawer-title">
-              {selected.kind === "node" ? (
-                <Server size={18} strokeWidth={2.25} className="kind-icon node" aria-hidden />
-              ) : (
-                <Smartphone size={18} strokeWidth={2.25} className="kind-icon device" aria-hidden />
-              )}
-              {selected.name}
-            </h3>
+            <div className="drawer-head">
+              <h3 className="drawer-title">
+                {drawerEntry.kind === "node" ? (
+                  <Server size={18} strokeWidth={2.25} className="kind-icon node" aria-hidden />
+                ) : (
+                  <Smartphone size={18} strokeWidth={2.25} className="kind-icon device" aria-hidden />
+                )}
+                {drawerEntry.name}
+              </h3>
+              <button
+                type="button"
+                className="btn btn-icon drawer-close"
+                title="Close"
+                aria-label="Close"
+                disabled={locked}
+                onClick={closeDrawer}
+              >
+                <X size={16} strokeWidth={2.25} aria-hidden />
+              </button>
+            </div>
             <div className="meta">
-              <KindBadge kind={selected.kind} />
+              <KindBadge kind={drawerEntry.kind} />
               {" · "}
-              <span className="mono">{selected.id.slice(0, 8)}…</span>
+              <span className="mono">{drawerEntry.id.slice(0, 8)}…</span>
             </div>
 
             <div className="field">
@@ -734,12 +909,12 @@ export function App() {
                 disabled={locked || !renameValue.trim()}
                 onClick={() =>
                   void run("rename", async () => {
-                    const r = await api.rename(selected.kind, selected.id, renameValue.trim());
+                    const r = await api.rename(drawerEntry.kind, drawerEntry.id, renameValue.trim());
                     push(
                       r.notice ?? `Renamed to "${renameValue.trim()}".`,
                       r.notice ? "info" : "success",
                     );
-                    setSelected(null);
+                    closeDrawer();
                   })
                 }
               >
@@ -750,24 +925,24 @@ export function App() {
             <p className="hint drawer-meta-lines">
               Hostname:{" "}
               <CopyValue
-                value={selected.meshHostname}
+                value={drawerEntry.meshHostname}
                 onCopied={(v) => push(`Copied ${v}`, "success")}
               />
               <br />
               IPv4:{" "}
               <CopyValue
-                value={selected.ipv4}
+                value={drawerEntry.ipv4}
                 onCopied={(v) => push(`Copied ${v}`, "success")}
               />
               <br />
               IPv6:{" "}
               <CopyValue
-                value={selected.ipv6}
+                value={drawerEntry.ipv6}
                 onCopied={(v) => push(`Copied ${v}`, "success")}
               />
             </p>
 
-            {selected.kind === "node" && isNodeOffline(selected.status) && (
+            {drawerEntry.kind === "node" && isNodeOffline(drawerEntry.status) && (
               <div className="install-box">
                 <div className="row-actions">
                   <strong style={{ fontSize: "0.85rem" }}>Install &amp; connect (warp-cli)</strong>
@@ -808,15 +983,15 @@ export function App() {
               </div>
             )}
 
-            {selected.kind === "node" && (
+            {drawerEntry.kind === "node" && (
               <div style={{ marginTop: "1.25rem" }}>
                 <button
                   className="btn"
                   disabled={locked}
                   onClick={() =>
                     void run("wg", async () => {
-                      await api.downloadWireGuard(selected.id, selected.name);
-                      push(`Downloaded WireGuard conf for "${selected.name}".`, "success");
+                      await api.downloadWireGuard(drawerEntry.id, drawerEntry.name);
+                      push(`Downloaded WireGuard conf for "${drawerEntry.name}".`, "success");
                     })
                   }
                 >
@@ -830,27 +1005,18 @@ export function App() {
                 className="btn btn-danger"
                 disabled={locked}
                 onClick={() => {
-                  const label = selected.kind === "node" ? "node" : "device";
-                  if (!confirm(`Delete ${label} "${selected.name}"?`)) return;
+                  const label = drawerEntry.kind === "node" ? "node" : "device";
+                  if (!confirm(`Delete ${label} "${drawerEntry.name}"?`)) return;
                   void run("delete", async () => {
-                    await api.remove(selected.kind, selected.id);
-                    push(`Deleted ${label} "${selected.name}".`, "success");
-                    setSelected(null);
+                    await api.remove(drawerEntry.kind, drawerEntry.id);
+                    push(`Deleted ${label} "${drawerEntry.name}".`, "success");
+                    closeDrawer();
                   });
                 }}
               >
-                {busy === "delete" ? <Spinner label="Deleting…" /> : `Delete ${selected.kind}`}
+                {busy === "delete" ? <Spinner label="Deleting…" /> : `Delete ${drawerEntry.kind}`}
               </button>
             </div>
-
-            <button
-              className="btn btn-ghost"
-              style={{ marginTop: "1.5rem" }}
-              disabled={locked}
-              onClick={() => setSelected(null)}
-            >
-              Close
-            </button>
           </aside>
         </div>
       )}

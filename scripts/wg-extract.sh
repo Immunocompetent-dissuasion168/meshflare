@@ -14,17 +14,33 @@ if ! command -v warp-cli >/dev/null 2>&1; then
   exit 1
 fi
 
-rm -rf /var/lib/cloudflare-warp
-mkdir -p /var/lib/cloudflare-warp /run/dbus /tmp
+mkdir -p /run/dbus /tmp
 
 if ! pgrep -x dbus-daemon >/dev/null 2>&1; then
   dbus-daemon --system || true
 fi
 
-if ! pgrep -x warp-svc >/dev/null 2>&1; then
-  /bin/warp-svc >/tmp/warp-svc.log 2>&1 &
-  sleep 5
+# Long-lived container: clear any prior enrollment before connector new.
+# Wiping the data dir while warp-svc is up leaves an in-memory registration
+# ("Old registration is still around").
+if pgrep -x warp-svc >/dev/null 2>&1; then
+  warp-cli --accept-tos disconnect >/dev/null 2>&1 || true
+  warp-cli --accept-tos registration delete >/dev/null 2>&1 || true
+  # Restart warp-svc so the next enroll starts from a clean process state.
+  pkill -x warp-svc >/dev/null 2>&1 || true
+  # Wait until the old process exits (up to ~5s).
+  i=0
+  while pgrep -x warp-svc >/dev/null 2>&1 && [ "$i" -lt 50 ]; do
+    sleep 0.1
+    i=$((i + 1))
+  done
 fi
+
+rm -rf /var/lib/cloudflare-warp
+mkdir -p /var/lib/cloudflare-warp
+
+/bin/warp-svc >/tmp/warp-svc.log 2>&1 &
+sleep 5
 
 warp-cli --accept-tos connector new "$TOKEN"
 sleep 5
