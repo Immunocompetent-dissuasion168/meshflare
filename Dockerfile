@@ -21,7 +21,7 @@ ARG DEBIAN_FRONTEND=noninteractive
 ARG WARP_VERSION=2026.6.880.0
 
 RUN apt-get -qq update \
-  && apt-get -qq install --no-install-recommends ca-certificates dbus jq procps wget \
+  && apt-get -qq install --no-install-recommends ca-certificates dbus jq procps tini wget \
   && wget -O /usr/share/keyrings/cloudflare-warp-archive-keyring.asc https://pkg.cloudflareclient.com/pubkey.gpg \
   && echo "deb [signed-by=/usr/share/keyrings/cloudflare-warp-archive-keyring.asc] https://pkg.cloudflareclient.com/ $(. /etc/os-release && echo "$VERSION_CODENAME") main" \
      | tee /etc/apt/sources.list.d/cloudflare-client.list \
@@ -45,4 +45,6 @@ RUN chmod +x /app/scripts/wg-extract.sh
 
 EXPOSE 3000
 VOLUME ["/data"]
+# tini reaps warp-svc zombies left by short-lived extract shells
+ENTRYPOINT ["tini", "--"]
 CMD ["bun", "run", "server/index.ts"]

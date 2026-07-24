@@ -1,9 +1,13 @@
 import type { CloudflareClient } from "./client";
-import { meshHostname, slugifyName } from "./names";
 import { getMeshSuffix } from "./dns-filter";
-import type { DeviceRegistration, Env, MeshEntry, MeshNode } from "../types";
-import { isConnectorRegistration } from "./names";
 import { listDeviceRegistrations, listMeshNodes } from "./mesh";
+import {
+  devicePresenceStatus,
+  isConnectorRegistration,
+  meshHostname,
+  slugifyName,
+} from "./names";
+import type { DeviceRegistration, Env, MeshEntry, MeshNode } from "../types";
 
 type GatewayRule = {
   id: string;
@@ -108,7 +112,7 @@ export async function buildMeshInventory(
       meshHostname: ipv4 ? meshHostname(name, suffix) : null,
       ipv4,
       ipv6,
-      status: "registered",
+      status: devicePresenceStatus(reg.last_seen_at),
       lastSeenAt: reg.last_seen_at,
       createdAt: reg.created_at,
       tunnelType: reg.tunnel_type,

@@ -36,6 +36,8 @@ export type Env = {
   MESH_RULE_PREFIX: string;
   DATA_DIR: string;
   PORT: string;
+  /** When true/1, serve fixture inventory and reject writes. */
+  DEMO_MODE?: string;
 };
 
 export type MeshNode = {
@@ -106,6 +108,8 @@ export type Settings = {
   lastCleanupAt?: string | null;
   accountName?: string | null;
   accountEmail?: string | null;
+  /** Present when DEMO_MODE is on. */
+  demo?: boolean;
 };
 
 export type CfApiResult<T> = {

@@ -164,7 +164,8 @@ export function App() {
   const [installLoading, setInstallLoading] = useState(false);
   const { toasts, push, dismiss } = useToasts();
 
-  const locked = busy !== null || creating;
+  const locked = busy !== null || creating || Boolean(settings?.demo);
+  const demo = Boolean(settings?.demo);
   const selected =
     selectedId && drawerEntry?.id === selectedId
       ? drawerEntry
@@ -386,6 +387,11 @@ export function App() {
 
   return (
     <div className="app">
+      {settings?.demo ? (
+        <div className="demo-banner" role="status">
+          Demo mode — read-only sample data. Deploy your own instance to manage a real mesh.
+        </div>
+      ) : null}
       <header className="top">
         <div className="brand">
           <Link to="/machines" className="brand-link" title="Machines">
@@ -1026,13 +1032,20 @@ export function App() {
                   disabled={locked}
                   onClick={() =>
                     void run("wg", async () => {
-                      await api.downloadWireGuard(drawerEntry.id, drawerEntry.name);
-                      push(`Downloaded WireGuard conf for "${drawerEntry.name}".`, "success");
+                      await api.generateWireGuard(drawerEntry.id, drawerEntry.name);
+                      push(`Generated WireGuard conf for "${drawerEntry.name}".`, "success");
                     })
                   }
                 >
-                  {busy === "wg" ? <Spinner label="Downloading…" /> : "Download WireGuard .conf"}
+                  {busy === "wg" ? (
+                    <Spinner label="Generating… (~30s)" />
+                  ) : (
+                    "Generate WireGuard .conf"
+                  )}
                 </button>
+                <p className="hint" style={{ marginTop: "0.4rem" }}>
+                  Enrolls a temporary connector to build the config — usually ~20–40 seconds.
+                </p>
               </div>
             )}
 

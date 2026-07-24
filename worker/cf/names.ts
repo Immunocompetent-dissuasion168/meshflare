@@ -34,6 +34,19 @@ export function daysSince(iso: string | null | undefined, now = Date.now()): num
   return (now - t) / 86_400_000;
 }
 
+/** Devices lack a live CF status string — treat recent last_seen as online. */
+export const DEVICE_ONLINE_WITHIN_MS = 15 * 60_000;
+
+export function devicePresenceStatus(
+  lastSeenAt: string | null | undefined,
+  now = Date.now(),
+): "online" | "offline" {
+  if (!lastSeenAt) return "offline";
+  const t = Date.parse(lastSeenAt);
+  if (Number.isNaN(t)) return "offline";
+  return now - t <= DEVICE_ONLINE_WITHIN_MS ? "online" : "offline";
+}
+
 export function isConnectorRegistration(reg: {
   user?: { email?: string };
 }): boolean {

@@ -17,7 +17,8 @@ import {
   renameWithCollisionHandling,
 } from "../cf/rename";
 import type { Env } from "../types";
-import { decodeConnectorToken, extractWireGuardConf } from "../wg/extractor";
+import { decodeConnectorToken } from "../wg/extractor";
+import { getWireGuardJob, startWireGuardJob } from "../wg/jobs";
 
 type AppEnv = { Bindings: Env };
 
@@ -141,7 +142,11 @@ api.post("/mesh/cleanup", async (c) => {
   return c.json({ cleanup, dns, lastCleanupAt: new Date().toISOString() });
 });
 
-api.get("/mesh/nodes/:id/wireguard", async (c) => {
+/**
+ * Start WireGuard .conf generation. Returns immediately with a job id — do not
+ * stream the conf on this request (warp-svc resets long-lived HTTP sockets).
+ */
+api.post("/mesh/nodes/:id/wireguard", async (c) => {
   const cf = createCfClient(c.env);
   const id = c.req.param("id");
   const token = await getMeshNodeToken(cf, id);
@@ -151,13 +156,38 @@ api.get("/mesh/nodes/:id/wireguard", async (c) => {
   const node = inventory.find((e) => e.kind === "node" && e.id === id);
   const name = node?.name ?? id;
 
-  const conf = await extractWireGuardConf(token);
-  return new Response(conf, {
-    status: 200,
-    headers: {
-      "Content-Type": "text/plain; charset=utf-8",
-      "Content-Disposition": `attachment; filename="${name}.conf"`,
-    },
+  const job = startWireGuardJob({ nodeId: id, filename: name, token });
+  return c.json({ jobId: job.id, status: job.status, filename: job.filename }, 202);
+});
+
+api.get("/mesh/wireguard/jobs/:jobId", async (c) => {
+  const job = getWireGuardJob(c.req.param("jobId"));
+  if (!job) {
+    throw new HTTPException(404, { message: "WireGuard job not found or expired" });
+  }
+  if (job.status === "pending") {
+    return c.json({
+      jobId: job.id,
+      status: job.status,
+      filename: job.filename,
+    });
+  }
+  if (job.status === "error") {
+    return c.json(
+      {
+        jobId: job.id,
+        status: job.status,
+        filename: job.filename,
+        error: job.error ?? "WireGuard generate failed",
+      },
+      500,
+    );
+  }
+  return c.json({
+    jobId: job.id,
+    status: job.status,
+    filename: job.filename,
+    conf: job.conf,
   });
 });
 
