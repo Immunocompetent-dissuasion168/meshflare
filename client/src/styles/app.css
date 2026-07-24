@@ -61,6 +61,11 @@ body,
   min-height: 100%;
 }
 
+html,
+body {
+  overflow-x: clip;
+}
+
 body {
   margin: 0;
   font-family: var(--font);
@@ -214,28 +219,6 @@ a {
   font: inherit;
 }
 
-.create-inline {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.45rem;
-  align-items: center;
-}
-
-.create-inline input {
-  min-width: 10rem;
-  flex: 1 1 10rem;
-  border: 1px solid var(--line);
-  background: var(--bg0);
-  color: var(--text);
-  border-radius: 10px;
-  padding: 0.5rem 0.75rem;
-  outline: none;
-}
-
-.create-inline input:focus {
-  border-color: color-mix(in srgb, var(--accent) 55%, var(--line));
-}
-
 .copy-chip {
   appearance: none;
   border: 1px solid transparent;
@@ -284,6 +267,97 @@ a {
 
 .settings-block .field input {
   background: var(--bg1);
+}
+
+.settings-block-wide {
+  grid-column: 1 / -1;
+}
+
+.split-tunnels-block {
+  order: 10;
+}
+
+.split-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.split-head .hint,
+.split-mode-copy {
+  margin: 0.2rem 0 0;
+}
+
+.split-mode-copy {
+  margin-bottom: 0.85rem;
+}
+
+.mode-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  flex-shrink: 0;
+  color: var(--muted);
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.mode-switch input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.switch-track {
+  width: 2.8rem;
+  height: 1.55rem;
+  padding: 0.18rem;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--bg2);
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.switch-track span {
+  display: block;
+  width: 1.05rem;
+  height: 1.05rem;
+  border-radius: 50%;
+  background: var(--muted);
+  transition: transform 0.18s ease, background 0.15s;
+}
+
+.mode-switch.include .switch-track {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.mode-switch.include .switch-track span {
+  transform: translateX(1.2rem);
+  background: var(--accent);
+}
+
+.mode-switch input:focus-visible + .switch-track {
+  outline: 2px solid color-mix(in srgb, var(--accent) 45%, transparent);
+  outline-offset: 2px;
+}
+
+.mode-switch input:disabled + .switch-track {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.split-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  margin-bottom: 0.85rem;
+}
+
+.split-add-button {
+  width: 100%;
 }
 
 .suffix-input {
@@ -736,6 +810,95 @@ th.sorted {
   color: var(--muted);
   margin-bottom: 1.25rem;
   font-size: 0.9rem;
+}
+
+.route-box {
+  margin-top: 1rem;
+  border-top: 1px solid var(--line);
+  padding-top: 1rem;
+}
+
+.route-box > .hint {
+  margin: 0.35rem 0 0.75rem;
+}
+
+.route-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.route-heading .hint {
+  margin: 0.25rem 0 0.75rem;
+}
+
+.route-choice {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+
+.route-option {
+  appearance: none;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--bg0);
+  color: var(--text);
+  padding: 0.7rem;
+  text-align: left;
+  cursor: pointer;
+}
+
+.route-option.active {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.route-option span {
+  display: block;
+  margin-top: 0.25rem;
+  color: var(--muted);
+  font-size: 0.75rem;
+  line-height: 1.35;
+}
+
+.route-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  margin-bottom: 0.85rem;
+}
+
+.route-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--bg0);
+  padding: 0.55rem 0.65rem;
+}
+
+.route-row > div {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.route-row .btn {
+  flex-shrink: 0;
+}
+
+.route-form {
+  margin-top: 0.75rem;
+}
+
+.route-form .field {
+  margin-bottom: 0.55rem;
 }
 
 .install-box {

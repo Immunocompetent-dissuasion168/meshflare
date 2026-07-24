@@ -35,7 +35,11 @@ cleanup() {
 }
 trap cleanup EXIT
 
-mkdir -p /run/dbus /tmp
+mkdir -p /tmp
+if [ ! -d /run/dbus ]; then
+  echo "WireGuard generation requires a writable /run mount for D-Bus." >&2
+  exit 1
+fi
 
 # Stale pid after container restart prevents dbus-daemon from starting.
 if [ -f /run/dbus/pid ]; then

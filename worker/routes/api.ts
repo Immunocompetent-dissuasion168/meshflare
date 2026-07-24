@@ -4,7 +4,15 @@ import { fetchAccountInfo } from "../cf/account";
 import { cleanupOfflineDevices } from "../cf/cleanup";
 import { createCfClient, CloudflareApiError } from "../cf/client";
 import { buildMeshInventory, syncMeshDns, syncMeshDnsAfterDelete, syncMeshDnsAfterRename } from "../cf/dns";
-import { getMeshNodeToken } from "../cf/mesh";
+import {
+  createMeshNodeHostnameRoute,
+  createMeshNodeRoute,
+  deleteMeshNodeHostnameRoute,
+  deleteMeshNodeRoute,
+  getMeshNodeToken,
+  listMeshNodeHostnameRoutes,
+  listMeshNodeRoutes,
+} from "../cf/mesh";
 import {
   getSettings,
   markCleanupRan,
@@ -17,6 +25,7 @@ import {
   deleteMeshEntry,
   renameWithCollisionHandling,
 } from "../cf/rename";
+import { getDefaultSplitTunnels, setDefaultSplitTunnels } from "../cf/split-tunnels";
 import type { Env } from "../types";
 import { decodeConnectorToken } from "../wg/extractor";
 import { getWireGuardJob, startWireGuardJob } from "../wg/jobs";
@@ -134,6 +143,88 @@ api.delete("/mesh/:kind/:id", async (c) => {
     : await syncMeshDns(cf, c.env);
   await markDnsSynced(c.env);
   return c.json({ ok: true, dns });
+});
+
+api.get("/mesh/nodes/:id/routes", async (c) => {
+  const cf = createCfClient(c.env);
+  const id = c.req.param("id");
+  const [cidrRoutes, hostnameRoutes] = await Promise.all([
+    listMeshNodeRoutes(cf, id),
+    listMeshNodeHostnameRoutes(cf, id),
+  ]);
+  return c.json({
+    routes: [
+      ...cidrRoutes.map((route) => ({ ...route, type: "cidr" as const })),
+      ...hostnameRoutes.map((route) => ({ ...route, type: "hostname" as const })),
+    ],
+  });
+});
+
+api.post("/mesh/nodes/:id/routes", async (c) => {
+  const body = await c.req.json<{
+    type?: "cidr" | "hostname";
+    network?: string;
+    hostname?: string;
+    comment?: string;
+  }>();
+  const type = body.type ?? "cidr";
+  const value = type === "hostname" ? body.hostname?.trim() : body.network?.trim();
+  const comment = body.comment?.trim();
+  if (!value) throw new HTTPException(400, { message: `${type === "hostname" ? "hostname" : "network"} is required` });
+  if (comment && comment.length > 100) {
+    throw new HTTPException(400, { message: "comment must be 100 characters or fewer" });
+  }
+  const cf = createCfClient(c.env);
+  const route = type === "hostname"
+    ? await createMeshNodeHostnameRoute(cf, c.req.param("id"), value, comment)
+    : await createMeshNodeRoute(cf, c.req.param("id"), value, comment);
+  return c.json({ route: { ...route, type } }, 201);
+});
+
+api.delete("/mesh/nodes/:id/routes/:routeId", async (c) => {
+  const cf = createCfClient(c.env);
+  const nodeId = c.req.param("id");
+  const routeId = c.req.param("routeId");
+  const [cidrRoutes, hostnameRoutes] = await Promise.all([
+    listMeshNodeRoutes(cf, nodeId),
+    listMeshNodeHostnameRoutes(cf, nodeId),
+  ]);
+  if (cidrRoutes.some((route) => route.id === routeId)) {
+    await deleteMeshNodeRoute(cf, routeId);
+  } else if (hostnameRoutes.some((route) => route.id === routeId)) {
+    await deleteMeshNodeHostnameRoute(cf, routeId);
+  } else {
+    throw new HTTPException(404, { message: "Route not found for this node" });
+  }
+  return c.json({ ok: true });
+});
+
+api.get("/settings/split-tunnels", async (c) => {
+  const cf = createCfClient(c.env);
+  return c.json(await getDefaultSplitTunnels(cf));
+});
+
+api.put("/settings/split-tunnels", async (c) => {
+  const body = await c.req.json<{
+    mode?: "include" | "exclude";
+    items?: Array<{ address?: string; host?: string; description?: string }>;
+  }>();
+  if (body.mode !== "include" && body.mode !== "exclude") {
+    throw new HTTPException(400, { message: "mode must be include or exclude" });
+  }
+  if (!Array.isArray(body.items)) {
+    throw new HTTPException(400, { message: "items is required" });
+  }
+  const items = body.items.map((item) => ({
+    ...(item.address?.trim() ? { address: item.address.trim() } : {}),
+    ...(item.host?.trim() ? { host: item.host.trim() } : {}),
+    ...(item.description?.trim() ? { description: item.description.trim() } : {}),
+  }));
+  if (items.some((item) => (!item.address && !item.host) || (item.address && item.host))) {
+    throw new HTTPException(400, { message: "each item must contain one address or host" });
+  }
+  const cf = createCfClient(c.env);
+  return c.json({ mode: body.mode, items: await setDefaultSplitTunnels(cf, body.mode, items) });
 });
 
 api.post("/mesh/sync-dns", async (c) => {

@@ -1,15 +1,23 @@
 import { useEffect, useMemo, useState, useTransition, type TransitionEvent } from "react";
 import {
   Loader2,
+  Pencil,
   RefreshCw,
   Search,
   Server,
   Settings as SettingsIcon,
   Smartphone,
+  Trash2,
   X,
 } from "lucide-react";
 import { Link, NavLink, useLocation, useSearchParams } from "react-router";
-import { api, type MeshEntry, type Settings } from "./lib/api";
+import {
+  api,
+  type MeshEntry,
+  type MeshRoute,
+  type Settings,
+  type SplitTunnelConfig,
+} from "./lib/api";
 import { ToastStack, useToasts } from "./lib/toasts";
 import {
   copyText,
@@ -159,8 +167,18 @@ export function App() {
   const [busy, setBusy] = useState<Busy>(null);
   const [ready, setReady] = useState(false);
   const [creating, setCreating] = useState(false);
+  const [createOpen, setCreateOpen] = useState(false);
   const [installCmd, setInstallCmd] = useState<string | null>(null);
   const [installLoading, setInstallLoading] = useState(false);
+  const [routes, setRoutes] = useState<MeshRoute[]>([]);
+  const [routesLoading, setRoutesLoading] = useState(false);
+  const [routeNetwork, setRouteNetwork] = useState("");
+  const [routeType, setRouteType] = useState<"cidr" | "hostname" | null>(null);
+  const [routeComment, setRouteComment] = useState("");
+  const [splitTunnels, setSplitTunnels] = useState<SplitTunnelConfig | null>(null);
+  const [splitEditor, setSplitEditor] = useState<{ index: number | null; value: string; description: string } | null>(null);
+  const [splitBusy, setSplitBusy] = useState(false);
+  const [routeBusy, setRouteBusy] = useState<string | null>(null);
   const { toasts, push, dismiss } = useToasts();
 
   const locked = busy !== null || creating || Boolean(settings?.demo);
@@ -260,6 +278,40 @@ export function App() {
   }, [selectedId, entries]);
 
   useEffect(() => {
+    if (tab !== "settings" || splitTunnels) return;
+    void api
+      .splitTunnels()
+      .then(setSplitTunnels)
+      .catch((e: unknown) => push(e instanceof Error ? e.message : String(e), "error"));
+  }, [tab, splitTunnels]);
+
+  useEffect(() => {
+    if (!selected || selected.kind !== "node") {
+      setRoutes([]);
+      setRoutesLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+    setRoutesLoading(true);
+    void api
+      .listNodeRoutes(selected.id)
+      .then((r) => {
+        if (!cancelled) setRoutes(r.routes);
+      })
+      .catch((e: unknown) => {
+        if (!cancelled) push(e instanceof Error ? e.message : String(e), "error");
+      })
+      .finally(() => {
+        if (!cancelled) setRoutesLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [selected?.id, selected?.kind]);
+
+  useEffect(() => {
     if (!selected || selected.kind !== "node" || !isNodeOffline(selected.status)) {
       setInstallCmd(null);
       return;
@@ -339,6 +391,21 @@ export function App() {
     }
   }
 
+  async function saveSplitTunnels(next: SplitTunnelConfig, message: string) {
+    setSplitBusy(true);
+    try {
+      const saved = await api.saveSplitTunnels(next);
+      setSplitTunnels(saved);
+      push(message, "success");
+      return true;
+    } catch (e) {
+      push(e instanceof Error ? e.message : String(e), "error");
+      return false;
+    } finally {
+      setSplitBusy(false);
+    }
+  }
+
   async function createNode() {
     const name = newName.trim();
     if (!name || creating) return;
@@ -363,6 +430,7 @@ export function App() {
           isConnector: true,
         } satisfies MeshEntry);
 
+      setCreateOpen(false);
       openEntry(created);
       push(r.notice ?? `Created node "${r.node.name}".`, r.notice ? "info" : "success");
     } catch (e) {
@@ -499,27 +567,13 @@ export function App() {
                   disabled={!ready}
                 />
               </div>
-              <div className="create-inline">
-                <input
-                  id="new-node"
-                  type="text"
-                  value={newName}
-                  placeholder="New node name"
-                  disabled={locked}
-                  aria-label="New node name"
-                  onChange={(e) => setNewName(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" && newName.trim()) void createNode();
-                  }}
-                />
-                <button
-                  className="btn btn-primary"
-                  disabled={locked || !newName.trim()}
-                  onClick={() => void createNode()}
-                >
-                  {creating ? <Spinner label="Creating…" /> : "Create node"}
-                </button>
-              </div>
+              <button
+                className="btn btn-primary"
+                disabled={!ready || creating}
+                onClick={() => setCreateOpen(true)}
+              >
+                Create node
+              </button>
             </div>
 
             {!ready ? (
@@ -645,8 +699,7 @@ export function App() {
       )}
 
       {tab === "settings" && (
-        <section className="panel settings-panel" aria-busy={!settingsReady}>
-          <h2>Settings</h2>
+        <section className="settings-panel" aria-busy={!settingsReady}>
           {!settingsReady ? (
             <div className="skeleton-stack">
               <SkeletonBlock className="skeleton-label" />
@@ -792,6 +845,7 @@ export function App() {
                 </div>
               </div>
 
+
               <div className="settings-block">
                 <h3>Maintenance</h3>
                 <div className="maint-row">
@@ -854,9 +908,202 @@ export function App() {
                   </button>
                 </div>
               </div>
+
+              <div className="settings-block settings-block-wide split-tunnels-block">
+                <div className="split-head">
+                  <div>
+                    <h3>WARP split tunnels</h3>
+                    <p className="hint">Manage routes on the default WARP device profile.</p>
+                  </div>
+                  {splitTunnels && (
+                    <label className={`mode-switch ${splitTunnels.mode}`}>
+                      <span>Exclude</span>
+                      <input
+                        type="checkbox"
+                        role="switch"
+                        aria-label="Split tunnel mode"
+                        checked={splitTunnels.mode === "include"}
+                        disabled={locked || splitBusy}
+                        onChange={(e) => {
+                          const mode = e.target.checked ? "include" : "exclude";
+                          if (!confirm(`Switch to ${mode} mode? The current list will be kept and applied using the new mode.`)) return;
+                          void saveSplitTunnels({ ...splitTunnels, mode }, `Switched to ${mode} mode.`);
+                        }}
+                      />
+                      <span className="switch-track" aria-hidden><span /></span>
+                      <span>Include</span>
+                    </label>
+                  )}
+                </div>
+                <p className="hint split-mode-copy">
+                  {splitTunnels?.mode === "include"
+                    ? "Only listed traffic is sent through WARP."
+                    : "All traffic is sent through WARP except listed traffic."}
+                </p>
+                {!splitTunnels ? (
+                  <Spinner label="Loading…" />
+                ) : (
+                  <>
+                    <div className="split-list">
+                      {splitTunnels.items.map((item, index) => (
+                        <div className="route-row" key={`${item.address ?? item.host}-${index}`}>
+                          <div>
+                            <span className="mono">{item.address ?? item.host}</span>
+                            {item.description && <span className="hint">{item.description}</span>}
+                          </div>
+                          <div className="row-actions">
+                            <button
+                              type="button"
+                              className="btn btn-icon"
+                              title="Edit"
+                              aria-label={`Edit ${item.address ?? item.host}`}
+                              disabled={locked || splitBusy}
+                              onClick={() => setSplitEditor({ index, value: item.address ?? item.host ?? "", description: item.description ?? "" })}
+                            >
+                              <Pencil size={14} strokeWidth={2.25} aria-hidden />
+                            </button>
+                            <button
+                              type="button"
+                              className="btn btn-icon btn-danger"
+                              title="Remove"
+                              aria-label={`Remove ${item.address ?? item.host}`}
+                              disabled={locked || splitBusy}
+                              onClick={() => {
+                                if (!confirm(`Remove ${item.address ?? item.host}?`)) return;
+                                void saveSplitTunnels(
+                                  { ...splitTunnels, items: splitTunnels.items.filter((_, itemIndex) => itemIndex !== index) },
+                                  "Split tunnel item removed.",
+                                );
+                              }}
+                            >
+                              <Trash2 size={14} strokeWidth={2.25} aria-hidden />
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                    <button
+                      type="button"
+                      className="btn btn-primary split-add-button"
+                      disabled={locked || splitBusy}
+                      onClick={() => setSplitEditor({ index: null, value: "", description: "" })}
+                    >
+                      + Add
+                    </button>
+                  </>
+                )}
+              </div>
             </div>
           )}
         </section>
+      )}
+
+      {createOpen && (
+        <div
+          className="modal-backdrop"
+          role="presentation"
+          onClick={() => !creating && setCreateOpen(false)}
+        >
+          <form
+            className="modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="create-node-title"
+            onClick={(e) => e.stopPropagation()}
+            onSubmit={(e) => {
+              e.preventDefault();
+              void createNode();
+            }}
+          >
+            <h3 id="create-node-title">Create node</h3>
+            <div className="field">
+              <label htmlFor="new-node">Node name</label>
+              <input
+                id="new-node"
+                type="text"
+                value={newName}
+                placeholder="New node name"
+                disabled={creating || Boolean(settings?.demo)}
+                autoFocus={!settings?.demo}
+                onChange={(e) => setNewName(e.target.value)}
+              />
+            </div>
+            {settings?.demo && (
+              <p className="hint">The demo is read-only. Deploy your own instance to create nodes.</p>
+            )}
+            <div className="row-actions modal-actions">
+              <button type="button" className="btn" disabled={creating} onClick={() => setCreateOpen(false)}>
+                Cancel
+              </button>
+              <button
+                type="submit"
+                className="btn btn-primary"
+                disabled={creating || Boolean(settings?.demo) || !newName.trim()}
+              >
+                {creating ? <Spinner label="Creating…" /> : "Create node"}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {splitEditor && splitTunnels && (
+        <div className="modal-backdrop" role="presentation" onClick={() => !splitBusy && setSplitEditor(null)}>
+          <form
+            className="modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="split-editor-title"
+            onClick={(e) => e.stopPropagation()}
+            onSubmit={(e) => {
+              e.preventDefault();
+              const value = splitEditor.value.trim();
+              if (!value || splitBusy) return;
+              const item = value.includes("/")
+                ? { address: value, description: splitEditor.description.trim() || undefined }
+                : { host: value, description: splitEditor.description.trim() || undefined };
+              const items = splitEditor.index === null
+                ? [...splitTunnels.items, item]
+                : splitTunnels.items.map((current, index) => index === splitEditor.index ? item : current);
+              void saveSplitTunnels(
+                { ...splitTunnels, items },
+                splitEditor.index === null ? "Split tunnel item added." : "Split tunnel item updated.",
+              ).then((saved) => {
+                if (saved) setSplitEditor(null);
+              });
+            }}
+          >
+            <h3 id="split-editor-title">{splitEditor.index === null ? "Add split tunnel item" : "Edit split tunnel item"}</h3>
+            <div className="field">
+              <label htmlFor="split-value">CIDR or hostname</label>
+              <input
+                id="split-value"
+                type="text"
+                value={splitEditor.value}
+                placeholder="10.0.0.0/24 or internal.example.com"
+                disabled={splitBusy}
+                autoFocus
+                onChange={(e) => setSplitEditor({ ...splitEditor, value: e.target.value })}
+              />
+            </div>
+            <div className="field">
+              <label htmlFor="split-description">Description (optional)</label>
+              <input
+                id="split-description"
+                type="text"
+                value={splitEditor.description}
+                disabled={splitBusy}
+                onChange={(e) => setSplitEditor({ ...splitEditor, description: e.target.value })}
+              />
+            </div>
+            <div className="row-actions modal-actions">
+              <button type="button" className="btn" disabled={splitBusy} onClick={() => setSplitEditor(null)}>Cancel</button>
+              <button type="submit" className="btn btn-primary" disabled={splitBusy || !splitEditor.value.trim()}>
+                {splitBusy ? <Spinner label="Saving…" /> : splitEditor.index === null ? "Add item" : "Save changes"}
+              </button>
+            </div>
+          </form>
+        </div>
       )}
 
       {drawerEntry && (
@@ -940,6 +1187,124 @@ export function App() {
                 onCopied={(v) => push(`Copied ${v}`, "success")}
               />
             </p>
+
+            {drawerEntry.kind === "node" && (
+              <div className="route-box">
+                <div className="route-heading">
+                  <div>
+                    <strong>Routes</strong>
+                    <p className="hint">Private networks and hostnames routed through this node.</p>
+                  </div>
+                  <button type="button" className="btn btn-primary" disabled={Boolean(routeBusy) || Boolean(settings?.demo)} onClick={() => setRouteType("cidr")}>New route</button>
+                </div>
+                {routesLoading ? (
+                  <span className="btn-spin hint">
+                    <Loader2 size={14} strokeWidth={2.5} className="spin" aria-hidden />
+                    Loading routes…
+                  </span>
+                ) : routes.length === 0 ? (
+                  <p className="hint">No routes configured.</p>
+                ) : (
+                  <div className="route-list">
+                    {routes.map((route) => (
+                      <div className="route-row" key={route.id ?? route.network}>
+                        <div>
+                          <span className="mono">{route.network ?? route.hostname ?? "—"}</span>
+                          <span className="hint">{route.type === "hostname" ? "Private hostname" : "Private CIDR"}</span>
+                          {route.comment && <span className="hint">{route.comment}</span>}
+                        </div>
+                        {route.id && (
+                          <button
+                            type="button"
+                            className="btn btn-danger"
+                            disabled={Boolean(routeBusy) || Boolean(settings?.demo)}
+                            onClick={() => {
+                              if (!confirm(`Delete route ${route.network ?? route.hostname ?? route.id}?`)) return;
+                              setRouteBusy(route.id ?? null);
+                              void api
+                                .removeNodeRoute(drawerEntry.id, route.id!)
+                                .then(() => {
+                                  setRoutes((current) => current.filter((item) => item.id !== route.id));
+                                  push(`Deleted route ${route.network ?? route.hostname ?? ""}.`, "success");
+                                })
+                                .catch((e: unknown) =>
+                                  push(e instanceof Error ? e.message : String(e), "error"),
+                                )
+                                .finally(() => setRouteBusy(null));
+                            }}
+                          >
+                            {routeBusy === route.id ? <Spinner label="Deleting…" /> : "Delete"}
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {routeType && <form
+                  className="route-form"
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    const network = routeNetwork.trim();
+                    if (!network || routeBusy) return;
+                    setRouteBusy("create");
+                    void api
+                      .createNodeRoute(drawerEntry.id, routeType, network, routeComment.trim())
+                      .then((r) => {
+                        setRoutes((current) => [...current, r.route]);
+                        setRouteNetwork("");
+                        setRouteComment("");
+                        setRouteType(null);
+                        push(`Added route ${network}.`, "success");
+                      })
+                      .catch((error: unknown) =>
+                        push(error instanceof Error ? error.message : String(error), "error"),
+                      )
+                      .finally(() => setRouteBusy(null));
+                  }}
+                >
+                  <div className="route-choice">
+                    <button type="button" className={`route-option ${routeType === "cidr" ? "active" : ""}`} onClick={() => setRouteType("cidr")}>
+                      <strong>Private CIDR</strong>
+                      <span>Route traffic for a private network range through this node.</span>
+                    </button>
+                    <button type="button" className={`route-option ${routeType === "hostname" ? "active" : ""}`} onClick={() => setRouteType("hostname")}>
+                      <strong>Private hostname</strong>
+                      <span>Map a private hostname to this node so devices can resolve it.</span>
+                    </button>
+                  </div>
+                  <div className="field">
+                    <label htmlFor="route-network">{routeType === "hostname" ? "Hostname" : "CIDR"}</label>
+                    <input
+                      id="route-network"
+                      type="text"
+                      value={routeNetwork}
+                      placeholder={routeType === "hostname" ? "wiki.internal.local" : "10.0.0.0/24"}
+                      disabled={Boolean(routeBusy) || Boolean(settings?.demo)}
+                      onChange={(e) => setRouteNetwork(e.target.value)}
+                    />
+                  </div>
+                  <div className="field">
+                    <label htmlFor="route-comment">Description (optional)</label>
+                    <input
+                      id="route-comment"
+                      type="text"
+                      maxLength={100}
+                      value={routeComment}
+                      disabled={Boolean(routeBusy) || Boolean(settings?.demo)}
+                      onChange={(e) => setRouteComment(e.target.value)}
+                    />
+                  </div>
+                  <button
+                    type="submit"
+                    className="btn btn-primary"
+                    disabled={Boolean(routeBusy) || Boolean(settings?.demo) || !routeNetwork.trim()}
+                  >
+                    {routeBusy === "create" ? <Spinner label="Adding…" /> : "Add route"}
+                  </button>
+                  <button type="button" className="btn" disabled={Boolean(routeBusy)} onClick={() => setRouteType(null)}>Cancel</button>
+                </form>}
+              </div>
+            )}
 
             {drawerEntry.kind === "node" && isNodeOffline(drawerEntry.status) && (
               <div className="install-box">

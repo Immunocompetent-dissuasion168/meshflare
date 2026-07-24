@@ -11,9 +11,18 @@ Self-hostable [Cloudflare](https://www.cloudflare.com/) Mesh manager (Bun + Hono
   </picture>
 </p>
 
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/demo-settings-dark.png">
+    <img alt="meshflare demo — settings and WARP split tunnels" src="docs/screenshots/demo-settings-light.png" width="800">
+  </picture>
+</p>
+
 ## Features
 
 - Machines inventory (nodes + devices)
+- Private CIDR and hostname routes for Mesh nodes
+- Default WARP profile split-tunnel management (include/exclude, CIDRs, and hostnames)
 - WireGuard `.conf` download for nodes
 - Configurable mesh domain (default `.mesh`) and Gateway DNS sync when an IP is known
 - Auto-delete devices offline longer than N days (default 7; nodes excluded)

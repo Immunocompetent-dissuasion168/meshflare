@@ -56,6 +56,18 @@ export type MeshNode = {
   }>;
 };
 
+export type MeshRoute = {
+  id?: string;
+  type?: "cidr" | "hostname";
+  network?: string;
+  hostname?: string;
+  comment?: string;
+  created_at?: string;
+  deleted_at?: string | null;
+  tunnel_id?: string;
+  tun_type?: string;
+};
+
 export type DeviceRegistration = {
   id: string;
   created_at: string;

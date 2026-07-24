@@ -1,4 +1,4 @@
-import type { MeshEntry, Settings } from "../types";
+import type { MeshEntry, MeshRoute, Settings } from "../types";
 
 function hoursAgo(h: number, now = Date.now()): string {
   return new Date(now - h * 3_600_000).toISOString();
@@ -109,6 +109,43 @@ export function buildDemoEntries(now = Date.now()): MeshEntry[] {
   ];
 }
 
+export function buildDemoRoutes(nodeId: string, now = Date.now()): MeshRoute[] {
+  if (nodeId === "demo-node-edge-1") {
+    return [
+      {
+        id: "demo-route-office",
+        type: "cidr",
+        network: "10.10.0.0/24",
+        comment: "Office LAN",
+        tunnel_id: nodeId,
+        tun_type: "warp_connector",
+        created_at: daysAgo(20, now),
+      },
+      {
+        id: "demo-route-services",
+        network: "fd00:10:10::/64",
+        comment: "Internal services",
+        tunnel_id: nodeId,
+        tun_type: "warp_connector",
+        created_at: daysAgo(12, now),
+      },
+    ];
+  }
+  if (nodeId === "demo-node-lab") {
+    return [
+      {
+        id: "demo-route-lab",
+        network: "192.168.50.0/24",
+        comment: "Lab subnet",
+        tunnel_id: nodeId,
+        tun_type: "warp_connector",
+        created_at: daysAgo(8, now),
+      },
+    ];
+  }
+  return [];
+}
+
 export function buildDemoSettings(now = Date.now()): Settings & { demo: true } {
   return {
     demo: true,
@@ -135,4 +172,4 @@ export function isDemoMode(env: { DEMO_MODE?: string | boolean }): boolean {
 }
 
 export const DEMO_READ_ONLY =
-  "Demo is read-only. Deploy your own meshflare instance to create, rename, or delete machines.";
+  "Demo is read-only. Deploy your own meshflare instance to manage machines and routes.";

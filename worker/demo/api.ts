@@ -3,6 +3,7 @@ import { HTTPException } from "hono/http-exception";
 import {
   DEMO_READ_ONLY,
   buildDemoEntries,
+  buildDemoRoutes,
   buildDemoSettings,
   isDemoMode,
 } from "../demo/fixtures";
@@ -25,6 +26,21 @@ demoApi.get("/health", (c) =>
 demoApi.get("/settings", (c) => c.json(buildDemoSettings()));
 
 demoApi.get("/mesh", (c) => c.json({ entries: buildDemoEntries(), demo: true }));
+
+demoApi.get("/mesh/nodes/:id/routes", (c) =>
+  c.json({ routes: buildDemoRoutes(c.req.param("id")) }),
+);
+
+demoApi.get("/settings/split-tunnels", (c) =>
+  c.json({
+    mode: "include" as const,
+    items: [
+      { address: "100.96.0.0/12", description: "Cloudflare Mesh IPv4" },
+      { address: "2606:4700:cf1:1000::/64", description: "Cloudflare Mesh IPv6" },
+      { host: "wiki.internal.local", description: "Private application" },
+    ],
+  }),
+);
 
 demoApi.all("/*", (c) => {
   if (c.req.method === "GET" || c.req.method === "HEAD") {

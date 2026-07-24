@@ -13,6 +13,26 @@ export type MeshEntry = {
   isConnector: boolean;
 };
 
+export type MeshRoute = {
+  id?: string;
+  type: "cidr" | "hostname";
+  network?: string;
+  hostname?: string;
+  comment?: string;
+  created_at?: string;
+};
+
+export type SplitTunnelItem = {
+  address?: string;
+  host?: string;
+  description?: string;
+};
+
+export type SplitTunnelConfig = {
+  mode: "include" | "exclude";
+  items: SplitTunnelItem[];
+};
+
 export type Settings = {
   offlineDays: number;
   dnsFilterEnabled: boolean;
@@ -75,6 +95,26 @@ export const api = {
     ),
   getNodeToken: (id: string) =>
     request<{ token: string; decoded: unknown }>(`/api/mesh/nodes/${id}/token`),
+  listNodeRoutes: (id: string) =>
+    request<{ routes: MeshRoute[] }>(`/api/mesh/nodes/${id}/routes`),
+  createNodeRoute: (
+    id: string,
+    type: "cidr" | "hostname",
+    value: string,
+    comment: string,
+  ) =>
+    request<{ route: MeshRoute }>(`/api/mesh/nodes/${id}/routes`, {
+      method: "POST",
+      body: JSON.stringify({
+        type,
+        ...(type === "cidr" ? { network: value } : { hostname: value }),
+        comment: comment || undefined,
+      }),
+    }),
+  removeNodeRoute: (nodeId: string, routeId: string) =>
+    request<{ ok: boolean }>(`/api/mesh/nodes/${nodeId}/routes/${routeId}`, {
+      method: "DELETE",
+    }),
   rename: (kind: "node" | "device", id: string, name: string) =>
     request<{ notice?: string; renamed: unknown; displaced?: unknown }>(
       `/api/mesh/${kind}/${id}`,
@@ -82,6 +122,12 @@ export const api = {
     ),
   remove: (kind: "node" | "device", id: string) =>
     request<{ ok: boolean }>(`/api/mesh/${kind}/${id}`, { method: "DELETE" }),
+  splitTunnels: () => request<SplitTunnelConfig>("/api/settings/split-tunnels"),
+  saveSplitTunnels: (config: SplitTunnelConfig) =>
+    request<SplitTunnelConfig>("/api/settings/split-tunnels", {
+      method: "PUT",
+      body: JSON.stringify(config),
+    }),
   syncDns: () =>
     request<{ dns: unknown; lastDnsSyncAt?: string }>("/api/mesh/sync-dns", {
       method: "POST",
