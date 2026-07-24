@@ -1,4 +1,4 @@
-export function oisdStatusMeta(status: string, enabled: boolean): {
+export function dnsFilterStatusMeta(status: string, enabled: boolean): {
   tone: "off" | "ok" | "sync" | "warn" | "danger";
   tip: string;
 } {

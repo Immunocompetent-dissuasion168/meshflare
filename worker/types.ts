@@ -1,7 +1,41 @@
-export type Env = Cloudflare.Env & {
+/** Shared app env for Bun (Coolify) and local dev. */
+
+import type { Low } from "lowdb";
+
+export type AppData = {
+  offlineDays: number;
+  dnsFilterEnabled: boolean;
+  dnsFilterStatus: string;
+  dnsFilterUrl: string;
+  dnsFilterLastSyncedAt: string | null;
+  dnsFilterCursor: number;
+  meshSuffix: string;
+  lastDnsSyncAt: string | null;
+  lastCleanupAt: string | null;
+};
+
+export type AppDb = Low<AppData>;
+
+export type ObjectCache = {
+  get(key: string): Promise<{ text(): Promise<string> } | null>;
+  put(key: string, value: string): Promise<void>;
+  delete(key: string): Promise<void>;
+};
+
+export type Env = {
+  DB: AppDb;
+  DNS_FILTER_CACHE: ObjectCache;
+  CLOUDFLARE_ACCOUNT_ID: string;
+  CLOUDFLARE_API_TOKEN?: string;
   CLOUDFLARE_API_KEY?: string;
   CLOUDFLARE_EMAIL?: string;
-  WG_EXTRACTOR_SECRET?: string;
+  MESH_DNS_SUFFIX: string;
+  DEFAULT_OFFLINE_DAYS: string;
+  DNS_FILTER_LIST_PREFIX: string;
+  DNS_FILTER_RULE_NAME: string;
+  MESH_RULE_PREFIX: string;
+  DATA_DIR: string;
+  PORT: string;
 };
 
 export type MeshNode = {
@@ -63,9 +97,15 @@ export type RenameResult = {
 
 export type Settings = {
   offlineDays: number;
-  oisdEnabled: boolean;
-  oisdStatus: string;
-  oisdLastSyncedAt?: string | null;
+  dnsFilterEnabled: boolean;
+  dnsFilterStatus: string;
+  dnsFilterUrl: string;
+  dnsFilterLastSyncedAt?: string | null;
+  meshSuffix: string;
+  lastDnsSyncAt?: string | null;
+  lastCleanupAt?: string | null;
+  accountName?: string | null;
+  accountEmail?: string | null;
 };
 
 export type CfApiResult<T> = {

@@ -1,0 +1,334 @@
+import type { CloudflareClient } from "./client";
+import type { Env, Settings } from "../types";
+
+const DEFAULT_FILTER_URL = "https://small.oisd.nl/";
+const LIST_CHUNK = 1000;
+const CHUNKS_PER_TICK = 3;
+const FILTER_REFRESH_MS = 6 * 60 * 60 * 1000;
+
+type GatewayList = {
+  id: string;
+  name: string;
+};
+
+type GatewayRule = {
+  id: string;
+  name: string;
+};
+
+function normalizeDomain(line: string): string | null {
+  let s = line.trim().toLowerCase();
+  if (!s || s.startsWith("#") || s.startsWith("!") || s.startsWith("//")) return null;
+  if (s.includes("://")) {
+    try {
+      s = new URL(s).hostname;
+    } catch {
+      return null;
+    }
+  }
+  s = s.replace(/^\|\|/, "").replace(/\^.*$/, "").replace(/^\*\./, "");
+  s = s.split(/\s+/).pop() ?? s;
+  if (!/^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/.test(s)) {
+    return null;
+  }
+  return s;
+}
+
+export function normalizeMeshSuffix(raw: string, fallback = "mesh"): string {
+  const s = raw
+    .trim()
+    .toLowerCase()
+    .replace(/^\.+/, "")
+    .replace(/[^a-z0-9.-]+/g, "")
+    .replace(/\.+/g, ".")
+    .replace(/^\.+|\.+$/g, "");
+  if (!s || s.length > 63 || !/^[a-z0-9]([a-z0-9.-]*[a-z0-9])?$/.test(s)) {
+    return fallback;
+  }
+  return s;
+}
+
+export function normalizeFilterUrl(raw: string, fallback = DEFAULT_FILTER_URL): string {
+  const trimmed = raw.trim();
+  if (!trimmed) return fallback;
+  try {
+    const u = new URL(trimmed);
+    if (u.protocol !== "http:" && u.protocol !== "https:") return fallback;
+    return u.toString();
+  } catch {
+    return fallback;
+  }
+}
+
+export async function getMeshSuffix(env: Env): Promise<string> {
+  return normalizeMeshSuffix(env.DB.data.meshSuffix || env.MESH_DNS_SUFFIX || "mesh");
+}
+
+export async function getSettings(env: Env): Promise<Settings> {
+  const d = env.DB.data;
+  const offlineDays = Number(d.offlineDays);
+  return {
+    offlineDays: Number.isFinite(offlineDays) && offlineDays > 0 ? offlineDays : 7,
+    dnsFilterEnabled: Boolean(d.dnsFilterEnabled),
+    dnsFilterStatus: d.dnsFilterStatus || "idle",
+    dnsFilterUrl: normalizeFilterUrl(d.dnsFilterUrl || DEFAULT_FILTER_URL),
+    dnsFilterLastSyncedAt: d.dnsFilterLastSyncedAt || null,
+    meshSuffix: await getMeshSuffix(env),
+    lastDnsSyncAt: d.lastDnsSyncAt || null,
+    lastCleanupAt: d.lastCleanupAt || null,
+  };
+}
+
+export type SettingsPatch = Partial<{
+  offlineDays: number;
+  dnsFilterEnabled: boolean;
+  dnsFilterUrl: string;
+  meshSuffix: string;
+}>;
+
+export async function updateSettings(env: Env, patch: SettingsPatch): Promise<Settings> {
+  const current = await getSettings(env);
+  let filterUrlChanged = false;
+
+  await env.DB.update((data) => {
+    if (patch.offlineDays !== undefined) {
+      data.offlineDays = Math.max(1, Math.min(365, Math.floor(patch.offlineDays)));
+    }
+    if (patch.meshSuffix !== undefined) {
+      data.meshSuffix = normalizeMeshSuffix(patch.meshSuffix);
+    }
+    if (patch.dnsFilterUrl !== undefined) {
+      const next = normalizeFilterUrl(patch.dnsFilterUrl);
+      if (next !== current.dnsFilterUrl) {
+        filterUrlChanged = true;
+        data.dnsFilterUrl = next;
+      }
+    }
+    if (patch.dnsFilterEnabled !== undefined) {
+      data.dnsFilterEnabled = patch.dnsFilterEnabled;
+      data.dnsFilterStatus = patch.dnsFilterEnabled ? "pending_enable" : "pending_disable";
+    } else if (filterUrlChanged) {
+      const filterActive =
+        current.dnsFilterEnabled ||
+        ["pending_enable", "syncing", "pending_refresh", "enabled"].includes(
+          current.dnsFilterStatus,
+        );
+      if (filterActive) data.dnsFilterStatus = "pending_refresh";
+    }
+  });
+
+  if (filterUrlChanged) {
+    await env.DNS_FILTER_CACHE.delete("domains.json");
+  }
+
+  return getSettings(env);
+}
+
+export async function markDnsSynced(env: Env): Promise<void> {
+  await env.DB.update((data) => {
+    data.lastDnsSyncAt = new Date().toISOString();
+  });
+}
+
+export async function markCleanupRan(env: Env): Promise<void> {
+  await env.DB.update((data) => {
+    data.lastCleanupAt = new Date().toISOString();
+  });
+}
+
+async function listGatewayLists(cf: CloudflareClient): Promise<GatewayList[]> {
+  const res = await cf.request<GatewayList[]>("GET", cf.accountPath("/gateway/lists"));
+  return res.result ?? [];
+}
+
+async function listGatewayRules(cf: CloudflareClient): Promise<GatewayRule[]> {
+  const res = await cf.request<GatewayRule[]>("GET", cf.accountPath("/gateway/rules"));
+  return res.result ?? [];
+}
+
+function managedLists(lists: GatewayList[], prefix: string): GatewayList[] {
+  return lists.filter((l) => l.name.startsWith(prefix));
+}
+
+async function downloadFilterDomains(url: string): Promise<string[]> {
+  const res = await fetch(url, {
+    headers: { "User-Agent": "meshflare/0.1" },
+  });
+  if (!res.ok) throw new Error(`Failed to download DNS filter list: HTTP ${res.status}`);
+  const text = await res.text();
+  const seen = new Set<string>();
+  const domains: string[] = [];
+  for (const line of text.split(/\r?\n/)) {
+    const d = normalizeDomain(line);
+    if (!d || seen.has(d)) continue;
+    seen.add(d);
+    domains.push(d);
+  }
+  return domains;
+}
+
+async function upsertBlockRule(
+  cf: CloudflareClient,
+  env: Env,
+  lists: GatewayList[],
+): Promise<void> {
+  const expression = lists
+    .map((l) => `any(dns.domains[*] in $${l.id})`)
+    .join(" or ");
+  if (!expression) return;
+
+  const rules = await listGatewayRules(cf);
+  const existing = rules.find((r) => r.name === env.DNS_FILTER_RULE_NAME);
+  const body = {
+    name: env.DNS_FILTER_RULE_NAME,
+    description: "meshflare DNS filter block rule",
+    enabled: true,
+    action: "block",
+    filters: ["dns"],
+    traffic: expression,
+    rule_settings: {
+      block_page_enabled: false,
+      block_reason: "Blocked by meshflare DNS filter",
+    },
+  };
+
+  if (existing) {
+    await cf.request("PUT", cf.accountPath(`/gateway/rules/${existing.id}`), body);
+  } else {
+    await cf.request("POST", cf.accountPath("/gateway/rules"), body);
+  }
+}
+
+async function deleteFilterArtifacts(cf: CloudflareClient, env: Env): Promise<void> {
+  const rules = await listGatewayRules(cf);
+  for (const rule of rules) {
+    if (rule.name === env.DNS_FILTER_RULE_NAME) {
+      await cf.request("DELETE", cf.accountPath(`/gateway/rules/${rule.id}`));
+    }
+  }
+
+  // Also clean legacy meshflare-oisd lists/rules from older installs.
+  const lists = await listGatewayLists(cf);
+  const prefixes = [env.DNS_FILTER_LIST_PREFIX, "meshflare-oisd"];
+  for (const list of lists) {
+    if (prefixes.some((p) => list.name.startsWith(p))) {
+      await cf.request("DELETE", cf.accountPath(`/gateway/lists/${list.id}`));
+    }
+  }
+
+  const legacyRule = "meshflare OISD Small";
+  for (const rule of rules) {
+    if (rule.name === legacyRule && rule.name !== env.DNS_FILTER_RULE_NAME) {
+      await cf.request("DELETE", cf.accountPath(`/gateway/rules/${rule.id}`));
+    }
+  }
+}
+
+/**
+ * Progressive DNS-filter enable/disable/refresh from any domain-list URL.
+ * URL changes while active force a full teardown + rebuild (no leftover lists).
+ */
+export async function processDnsFilterTick(
+  cf: CloudflareClient,
+  env: Env,
+): Promise<string> {
+  const settings = await getSettings(env);
+  let status = settings.dnsFilterStatus;
+
+  if (status === "enabled" && settings.dnsFilterEnabled) {
+    const last = settings.dnsFilterLastSyncedAt
+      ? Date.parse(settings.dnsFilterLastSyncedAt)
+      : 0;
+    if (!last || Date.now() - last >= FILTER_REFRESH_MS) {
+      await env.DB.update((data) => {
+        data.dnsFilterStatus = "pending_refresh";
+      });
+      status = "pending_refresh";
+    }
+  }
+
+  if (status === "pending_refresh") {
+    await deleteFilterArtifacts(cf, env);
+    await env.DNS_FILTER_CACHE.delete("domains.json");
+    await env.DB.update((data) => {
+      data.dnsFilterCursor = 0;
+      data.dnsFilterStatus = "pending_enable";
+    });
+    return "dns_filter_refresh_started";
+  }
+
+  if (status === "pending_disable" || (status === "idle" && !settings.dnsFilterEnabled)) {
+    if (status === "pending_disable") {
+      await deleteFilterArtifacts(cf, env);
+      await env.DNS_FILTER_CACHE.delete("domains.json");
+      await env.DB.update((data) => {
+        data.dnsFilterStatus = "idle";
+        data.dnsFilterEnabled = false;
+        data.dnsFilterCursor = 0;
+        data.dnsFilterLastSyncedAt = null;
+      });
+      return "dns_filter_disabled";
+    }
+    return "dns_filter_idle";
+  }
+
+  if (status === "pending_enable" || status === "syncing") {
+    let domains: string[] = [];
+    const cached = await env.DNS_FILTER_CACHE.get("domains.json");
+    if (cached) {
+      domains = JSON.parse(await cached.text()) as string[];
+    } else {
+      domains = await downloadFilterDomains(settings.dnsFilterUrl);
+      await env.DNS_FILTER_CACHE.put("domains.json", JSON.stringify(domains));
+    }
+
+    const cursor = env.DB.data.dnsFilterCursor || 0;
+    const existing = managedLists(await listGatewayLists(cf), env.DNS_FILTER_LIST_PREFIX);
+    const existingChunkIndexes = new Set(
+      existing.map((l) => {
+        const m = l.name.match(/chunk-(\d+)$/);
+        return m ? Number(m[1]) : -1;
+      }),
+    );
+
+    let nextCursor = cursor;
+    let created = 0;
+
+    for (let i = 0; i < CHUNKS_PER_TICK; i++) {
+      const start = nextCursor;
+      if (start >= domains.length) break;
+      const chunkIndex = Math.floor(start / LIST_CHUNK) + 1;
+      const slice = domains.slice(start, start + LIST_CHUNK);
+      if (!existingChunkIndexes.has(chunkIndex)) {
+        await cf.request("POST", cf.accountPath("/gateway/lists"), {
+          name: `${env.DNS_FILTER_LIST_PREFIX}-chunk-${chunkIndex}`,
+          description: `meshflare DNS filter (${settings.dnsFilterUrl})`,
+          type: "DOMAIN",
+          items: slice.map((value) => ({ value })),
+        });
+        created += 1;
+      }
+      nextCursor = start + slice.length;
+    }
+
+    await env.DB.update((data) => {
+      data.dnsFilterCursor = nextCursor;
+      data.dnsFilterStatus = "syncing";
+    });
+
+    if (nextCursor >= domains.length) {
+      const lists = managedLists(await listGatewayLists(cf), env.DNS_FILTER_LIST_PREFIX);
+      await upsertBlockRule(cf, env, lists);
+      await env.DB.update((data) => {
+        data.dnsFilterStatus = "enabled";
+        data.dnsFilterEnabled = true;
+        data.dnsFilterLastSyncedAt = new Date().toISOString();
+      });
+      return `dns_filter_enabled chunks=${lists.length} created_this_tick=${created}`;
+    }
+
+    return `dns_filter_syncing ${nextCursor}/${domains.length} created_this_tick=${created}`;
+  }
+
+  return `dns_filter_${status}`;
+}

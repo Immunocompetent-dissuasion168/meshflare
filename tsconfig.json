@@ -10,10 +10,10 @@
     "noEmit": true,
     "isolatedModules": true,
     "resolveJsonModule": true,
-    "types": ["vite/client"],
+    "types": ["vite/client", "bun"],
     "paths": {
       "@/*": ["./client/src/*"]
     }
   },
-  "include": ["worker", "client", "vite.config.ts", "worker-configuration.d.ts"]
+  "include": ["server", "worker", "client", "vite.config.ts"]
 }

@@ -15,12 +15,23 @@ export type MeshEntry = {
 
 export type Settings = {
   offlineDays: number;
-  oisdEnabled: boolean;
-  oisdStatus: string;
-  oisdLastSyncedAt?: string | null;
-  accountIdConfigured?: boolean;
-  meshSuffix?: string;
+  dnsFilterEnabled: boolean;
+  dnsFilterStatus: string;
+  dnsFilterUrl: string;
+  dnsFilterLastSyncedAt?: string | null;
+  meshSuffix: string;
+  lastDnsSyncAt?: string | null;
+  lastCleanupAt?: string | null;
+  accountName?: string | null;
+  accountEmail?: string | null;
 };
+
+export type SettingsPatch = Partial<{
+  offlineDays: number;
+  dnsFilterEnabled: boolean;
+  dnsFilterUrl: string;
+  meshSuffix: string;
+}>;
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(path, {
@@ -50,7 +61,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
 export const api = {
   settings: () => request<Settings>("/api/settings"),
-  patchSettings: (body: Partial<{ offlineDays: number; oisdEnabled: boolean }>) =>
+  patchSettings: (body: SettingsPatch) =>
     request<Settings>("/api/settings", { method: "PATCH", body: JSON.stringify(body) }),
   listMesh: () => request<{ entries: MeshEntry[] }>("/api/mesh"),
   createNode: (name: string) =>
@@ -70,8 +81,14 @@ export const api = {
     ),
   remove: (kind: "node" | "device", id: string) =>
     request<{ ok: boolean }>(`/api/mesh/${kind}/${id}`, { method: "DELETE" }),
-  syncDns: () => request<{ dns: unknown }>("/api/mesh/sync-dns", { method: "POST" }),
-  cleanup: () => request<{ cleanup: unknown }>("/api/mesh/cleanup", { method: "POST" }),
+  syncDns: () =>
+    request<{ dns: unknown; lastDnsSyncAt?: string }>("/api/mesh/sync-dns", {
+      method: "POST",
+    }),
+  cleanup: () =>
+    request<{ cleanup: unknown; lastCleanupAt?: string }>("/api/mesh/cleanup", {
+      method: "POST",
+    }),
   downloadWireGuard: async (id: string, filename: string) => {
     const res = await fetch(`/api/mesh/nodes/${id}/wireguard`);
     if (!res.ok) {

@@ -19,7 +19,7 @@ export class CloudflareClient {
     const accountId = env.CLOUDFLARE_ACCOUNT_ID?.trim();
     if (!accountId) {
       throw new CloudflareApiError(
-        "CLOUDFLARE_ACCOUNT_ID is required (set via wrangler secret / .dev.vars)",
+        "CLOUDFLARE_ACCOUNT_ID is required",
         500,
       );
     }

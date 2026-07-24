@@ -1,10 +1,16 @@
 import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
+import { fetchAccountInfo } from "../cf/account";
 import { cleanupOfflineDevices } from "../cf/cleanup";
 import { createCfClient, CloudflareApiError } from "../cf/client";
 import { buildMeshInventory, syncMeshDns } from "../cf/dns";
 import { getMeshNodeToken } from "../cf/mesh";
-import { getSettings, processOisdTick, updateSettings } from "../cf/oisd";
+import {
+  getSettings,
+  markCleanupRan,
+  markDnsSynced,
+  updateSettings,
+} from "../cf/dns-filter";
 import {
   createNodeWithUniqueName,
   deleteMeshEntry,
@@ -31,18 +37,43 @@ api.onError((err, c) => {
 api.get("/health", (c) => c.json({ ok: true, service: "meshflare" }));
 
 api.get("/settings", async (c) => {
-  const settings = await getSettings(c.env);
+  const cf = createCfClient(c.env);
+  const [settings, account] = await Promise.all([
+    getSettings(c.env),
+    fetchAccountInfo(cf),
+  ]);
   return c.json({
     ...settings,
-    accountIdConfigured: Boolean(c.env.CLOUDFLARE_ACCOUNT_ID),
-    meshSuffix: c.env.MESH_DNS_SUFFIX || "mesh",
+    accountName: account.name,
+    accountEmail: account.email,
   });
 });
 
 api.patch("/settings", async (c) => {
-  const body = await c.req.json<{ offlineDays?: number; oisdEnabled?: boolean }>();
+  const body = await c.req.json<{
+    offlineDays?: number;
+    dnsFilterEnabled?: boolean;
+    dnsFilterUrl?: string;
+    meshSuffix?: string;
+  }>();
+  const before = await getSettings(c.env);
   const settings = await updateSettings(c.env, body);
-  return c.json(settings);
+
+  const suffixChanged =
+    body.meshSuffix !== undefined && settings.meshSuffix !== before.meshSuffix;
+  if (suffixChanged) {
+    const cf = createCfClient(c.env);
+    await syncMeshDns(cf, c.env);
+    await markDnsSynced(c.env);
+  }
+
+  const cf = createCfClient(c.env);
+  const account = await fetchAccountInfo(cf);
+  return c.json({
+    ...(await getSettings(c.env)),
+    accountName: account.name,
+    accountEmail: account.email,
+  });
 });
 
 api.get("/mesh", async (c) => {
@@ -57,6 +88,7 @@ api.post("/mesh/nodes", async (c) => {
   const cf = createCfClient(c.env);
   const { node, notice } = await createNodeWithUniqueName(cf, body.name);
   const dns = await syncMeshDns(cf, c.env);
+  await markDnsSynced(c.env);
   return c.json({ node, notice, dns }, 201);
 });
 
@@ -71,6 +103,7 @@ api.patch("/mesh/:kind/:id", async (c) => {
   const cf = createCfClient(c.env);
   const result = await renameWithCollisionHandling(cf, kind, c.req.param("id"), body.name);
   const dns = await syncMeshDns(cf, c.env);
+  await markDnsSynced(c.env);
   return c.json({ ...result, dns });
 });
 
@@ -82,13 +115,15 @@ api.delete("/mesh/:kind/:id", async (c) => {
   const cf = createCfClient(c.env);
   await deleteMeshEntry(cf, kind, c.req.param("id"));
   const dns = await syncMeshDns(cf, c.env);
+  await markDnsSynced(c.env);
   return c.json({ ok: true, dns });
 });
 
 api.post("/mesh/sync-dns", async (c) => {
   const cf = createCfClient(c.env);
   const dns = await syncMeshDns(cf, c.env);
-  return c.json({ dns });
+  await markDnsSynced(c.env);
+  return c.json({ dns, lastDnsSyncAt: new Date().toISOString() });
 });
 
 api.post("/mesh/cleanup", async (c) => {
@@ -96,7 +131,9 @@ api.post("/mesh/cleanup", async (c) => {
   const settings = await getSettings(c.env);
   const cleanup = await cleanupOfflineDevices(cf, settings.offlineDays);
   const dns = await syncMeshDns(cf, c.env);
-  return c.json({ cleanup, dns });
+  await markCleanupRan(c.env);
+  await markDnsSynced(c.env);
+  return c.json({ cleanup, dns, lastCleanupAt: new Date().toISOString() });
 });
 
 api.get("/mesh/nodes/:id/wireguard", async (c) => {
@@ -109,7 +146,7 @@ api.get("/mesh/nodes/:id/wireguard", async (c) => {
   const node = inventory.find((e) => e.kind === "node" && e.id === id);
   const name = node?.name ?? id;
 
-  const conf = await extractWireGuardConf(c.env, token);
+  const conf = await extractWireGuardConf(token);
   return new Response(conf, {
     status: 200,
     headers: {

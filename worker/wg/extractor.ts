@@ -1,14 +1,9 @@
 /**
- * WireGuard extraction for mesh nodes via Coolify-hosted extractor.
- *
- * Enrollment uses proprietary wdapi (`warp-cli connector new`). Workers cannot
- * run warp-cli; meshflare POSTs the connector token to the Coolify extractor
- * which returns a WireGuard .conf.
+ * WireGuard .conf extraction for mesh nodes.
+ * Runs warp-cli locally inside the meshflare container (no separate extractor).
  */
 
-import type { Env } from "../types";
-
-const WG_EXTRACTOR_BASE = "https://meshflare-wg.wastu.net";
+let extractLock: Promise<void> = Promise.resolve();
 
 export function decodeConnectorToken(token: string): {
   account_tag: string;
@@ -26,24 +21,47 @@ export function decodeConnectorToken(token: string): {
   };
 }
 
-export async function extractWireGuardConf(env: Env, token: string): Promise<string> {
-  const headers: Record<string, string> = {
-    "Content-Type": "application/json",
-  };
-  if (env.WG_EXTRACTOR_SECRET?.trim()) {
-    headers.Authorization = `Bearer ${env.WG_EXTRACTOR_SECRET.trim()}`;
-  }
+function scriptPath(): string {
+  return process.env.WG_EXTRACT_SCRIPT?.trim() || `${import.meta.dir}/../../scripts/wg-extract.sh`;
+}
 
-  const res = await fetch(`${WG_EXTRACTOR_BASE}/extract`, {
-    method: "POST",
-    headers,
-    body: JSON.stringify({ token }),
+export async function extractWireGuardConf(token: string): Promise<string> {
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
   });
+  const prev = extractLock;
+  extractLock = prev.then(() => gate);
+  await prev;
 
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`WireGuard extractor failed (${res.status}): ${text}`);
+  try {
+    const proc = Bun.spawn([scriptPath()], {
+      env: {
+        ...process.env,
+        CONNECTOR_TOKEN: token,
+      },
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+
+    const [stdout, stderr, exitCode] = await Promise.all([
+      new Response(proc.stdout).text(),
+      new Response(proc.stderr).text(),
+      proc.exited,
+    ]);
+
+    if (exitCode !== 0) {
+      throw new Error(
+        (stderr || stdout || `WireGuard extract failed (exit ${exitCode})`).trim(),
+      );
+    }
+
+    const conf = stdout.trim();
+    if (!conf.includes("[Interface]") || !conf.includes("[Peer]")) {
+      throw new Error("WireGuard extract returned an invalid config");
+    }
+    return `${conf}\n`;
+  } finally {
+    release();
   }
-
-  return res.text();
 }

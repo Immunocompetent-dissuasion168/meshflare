@@ -1,56 +1,45 @@
 # meshflare
 
-Self-hostable Cloudflare Mesh manager (account ID + API credentials from env).
+Cloudflare Mesh manager (Bun + Hono). One Docker image — UI, API, cron, and WireGuard extract.
 
 ## Features
 
-- Inventory of **mesh nodes** (`warp_connector`) and **devices** (Cloudflare One)
-- Renames the real Cloudflare name; `name.mesh` is derived from that name
-- Name collisions: existing holder becomes `name-2` / `name-3` / … with a UI notice
-- Gateway DNS override for `*.mesh` **only when a Mesh IP is known**
-- Cron every minute: DNS sync + delete devices offline longer than N days (default 7; nodes never auto-deleted)
-- Toggle **OISD Small** (Gateway DOMAIN lists + block rule), synced progressively via cron
-- WireGuard for nodes: reverse-engineered wgcf-connector flow (see below)
+- Machines inventory (nodes + devices); rename updates the real Cloudflare name
+- Configurable mesh domain (default `.mesh`) and Gateway DNS sync when an IP is known
+- Auto-delete devices offline longer than N days (default 7; nodes excluded)
+- Configurable DNS filtering from any domain-list URL (default [small.oisd.nl](https://small.oisd.nl/))
+- WireGuard `.conf` download for nodes (warp-cli in the same container)
 
-## Config (account-agnostic)
+## Image
 
-| Name | Required | Notes |
-|------|----------|--------|
-| `CLOUDFLARE_ACCOUNT_ID` | yes | Target account |
-| `CLOUDFLARE_API_TOKEN` | recommended | Scoped API token |
-| `CLOUDFLARE_API_KEY` + `CLOUDFLARE_EMAIL` | alt | Global key auth |
-| `MESH_DNS_SUFFIX` | no | default `mesh` |
-| `WG_EXTRACTOR_SECRET` | for WG download | Bearer shared with Coolify extractor |
+`ghcr.io/bgwastu/meshflare`
+
+## Config
+
+| Name | Notes |
+|------|--------|
+| `CLOUDFLARE_ACCOUNT_ID` | required |
+| `CLOUDFLARE_API_TOKEN` | preferred |
+| `CLOUDFLARE_API_KEY` + `CLOUDFLARE_EMAIL` | alt |
+| `DATA_DIR` | default `/data` (lowdb + filter cache) |
+| `PORT` | default `3000` |
 
 ```bash
-cp .dev.vars.example .dev.vars
+cp .env.example .env
 bun install
-bun run db:migrate:local
-bun run dev
+bun run build
+bun run dev        # API on :3000
+bun run dev:client # Vite UI (proxies /api)
 ```
 
-## Deploy
+## Docker
 
 ```bash
-bunx wrangler d1 create meshflare
-bunx wrangler r2 bucket create meshflare-oisd
-# put database_id into wrangler.jsonc
-
-bunx wrangler secret put CLOUDFLARE_ACCOUNT_ID
-bunx wrangler secret put CLOUDFLARE_API_TOKEN
-
-bun run db:migrate:remote
-bun run deploy
+docker run --rm -p 3000:3000 \
+  -v meshflare-data:/data \
+  -e CLOUDFLARE_ACCOUNT_ID=… \
+  -e CLOUDFLARE_API_TOKEN=… \
+  ghcr.io/bgwastu/meshflare:latest
 ```
 
-Attach a custom domain (e.g. `meshflare.wastu.net`) and protect it with Cloudflare Access (Only Bagas).
-
-## WireGuard
-
-Connector enrollment uses Cloudflare’s proprietary device API (`wdapi`). meshflare downloads `.conf` files by calling the Coolify extractor at `https://meshflare-wg.wastu.net` (`container/`), authenticated with `WG_EXTRACTOR_SECRET`.
-
-```bash
-bunx wrangler secret put WG_EXTRACTOR_SECRET
-```
-
-Requires a device profile set to WireGuard (peer key `bmXOC+F1FxEMF9dyiK2H5/1SUtzH0JuVo51h2wPfgyo=`). Downloading creates a new connector registration.
+WireGuard download needs a WireGuard device profile. CI pushes GHCR and triggers Coolify via `COOLIFY_WEBHOOK` + `COOLIFY_TOKEN`.

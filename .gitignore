@@ -1,10 +1,11 @@
 # Dependencies
 node_modules/
 
-# Build / local wrangler
+# Build / local
 .wrangler/
 .mf/
 dist/
+data/
 *.log
 .DS_Store
 

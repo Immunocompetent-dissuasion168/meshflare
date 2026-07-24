@@ -1,5 +1,6 @@
 import type { CloudflareClient } from "./client";
 import { meshHostname, slugifyName } from "./names";
+import { getMeshSuffix } from "./dns-filter";
 import type { DeviceRegistration, Env, MeshEntry, MeshNode } from "../types";
 import { isConnectorRegistration } from "./names";
 import { listDeviceRegistrations, listMeshNodes } from "./mesh";
@@ -63,7 +64,7 @@ export async function buildMeshInventory(
   cf: CloudflareClient,
   env: Env,
 ): Promise<MeshEntry[]> {
-  const suffix = env.MESH_DNS_SUFFIX || "mesh";
+  const suffix = await getMeshSuffix(env);
   const [nodes, regs] = await Promise.all([
     listMeshNodes(cf),
     listDeviceRegistrations(cf, "active"),
@@ -168,21 +169,21 @@ export type DnsSyncStats = {
 };
 
 /**
- * Sync Gateway DNS overrides for *.mesh — only when an IP is known.
- * Removes stale meshflare-managed rules whose hostname is no longer desired.
+ * Sync Gateway DNS overrides for *.<suffix> — only when an IP is known.
+ * Removes all meshflare-managed override rules that are no longer desired,
+ * including leftovers from a previous suffix.
  */
 export async function syncMeshDns(
   cf: CloudflareClient,
   env: Env,
 ): Promise<DnsSyncStats> {
-  const suffix = env.MESH_DNS_SUFFIX || "mesh";
+  const suffix = await getMeshSuffix(env);
   const inventory = await buildMeshInventory(cf, env);
   const desired = new Map<string, string>();
 
   for (const entry of inventory) {
     if (!entry.ipv4) continue;
     const host = meshHostname(entry.name, suffix);
-    // First writer wins on slug collision; rename flow should prevent this.
     if (!desired.has(host)) desired.set(host, entry.ipv4);
   }
 
@@ -191,9 +192,8 @@ export async function syncMeshDns(
   for (const rule of rules) {
     if (rule.action !== "override") continue;
     if (!rule.filters?.includes("dns")) continue;
-    const fqdn = parseFqdnFromTraffic(rule.traffic);
-    if (!fqdn?.endsWith(`.${suffix}`)) continue;
     if (!rule.name?.startsWith(env.MESH_RULE_PREFIX)) continue;
+    const fqdn = parseFqdnFromTraffic(rule.traffic) ?? rule.name;
     managed.set(fqdn, rule);
   }
 
@@ -207,15 +207,17 @@ export async function syncMeshDns(
     const current = existing?.rule_settings?.override_ips?.[0];
     if (existing && current === ipv4) {
       skipped += 1;
+      managed.delete(host);
       continue;
     }
     await upsertMeshDnsRule(cf, env, host, ipv4, existing);
-    if (existing) updated += 1;
-    else created += 1;
+    if (existing) {
+      updated += 1;
+      managed.delete(host);
+    } else created += 1;
   }
 
-  for (const [host, rule] of managed) {
-    if (desired.has(host)) continue;
+  for (const [, rule] of managed) {
     await deleteGatewayRule(cf, rule.id);
     deleted += 1;
   }
