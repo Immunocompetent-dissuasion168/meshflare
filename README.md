@@ -51,6 +51,10 @@ bun run dev        # API on :3000
 bun run dev:client # Vite UI (proxies /api)
 ```
 
+Keep the `/data` volume when upgrading or replacing the container. Meshflare
+stores each node's WireGuard registration there so regenerating a config reuses
+the same key and device IP instead of enrolling a new device.
+
 ## Docker
 
 ```bash

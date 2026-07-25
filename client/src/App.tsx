@@ -6,6 +6,7 @@ import {
   Search,
   Server,
   Settings as SettingsIcon,
+  SlidersHorizontal,
   Smartphone,
   Trash2,
   X,
@@ -21,14 +22,15 @@ import {
 import { ToastStack, useToasts } from "./lib/toasts";
 import {
   copyText,
-  isNodeOffline,
   dnsFilterStatusMeta,
   machineStatusMeta,
+  isNodeInitial,
   warpConnectorInstallCommand,
 } from "./lib/warp";
 
 type Tab = "machines" | "settings";
 type KindFilter = "all" | "node" | "device";
+type ActivityFilter = "online" | "offline" | "all";
 type SortKey = "name" | "kind" | "meshHostname" | "ipv4" | "lastSeenAt" | "status" | "createdAt";
 type Busy =
   | null
@@ -39,6 +41,7 @@ type Busy =
   | "dns-filter"
   | "rename"
   | "wg"
+  | "regenerate"
   | "delete"
   | "domain"
   | "filter-url";
@@ -55,6 +58,11 @@ const SORT_KEYS: SortKey[] = [
 
 function parseKind(value: string | null): KindFilter {
   return value === "node" || value === "device" ? value : "all";
+}
+
+function parseActivity(value: string | null): ActivityFilter {
+  if (value === "offline" || value === "all") return value;
+  return "online";
 }
 
 function parseSort(value: string | null): SortKey {
@@ -166,6 +174,8 @@ export function App() {
   const tab: Tab = location.pathname.startsWith("/settings") ? "settings" : "machines";
 
   const kindFilter = parseKind(searchParams.get("kind"));
+  const activityParam = searchParams.get("activity");
+  const activityFilter = kindFilter === "all" || activityParam ? parseActivity(activityParam) : "all";
   const search = searchParams.get("q") ?? "";
   const sortKey = parseSort(searchParams.get("sort"));
   const sortDir = searchParams.get("dir") === "asc" ? "asc" : "desc";
@@ -198,6 +208,7 @@ export function App() {
   const [splitEditor, setSplitEditor] = useState<{ index: number | null; value: string; description: string } | null>(null);
   const [splitBusy, setSplitBusy] = useState(false);
   const [routeBusy, setRouteBusy] = useState<string | null>(null);
+  const [filterOpen, setFilterOpen] = useState(false);
   const { toasts, push, dismiss } = useToasts();
 
   const locked = busy !== null || creating || Boolean(settings?.demo);
@@ -312,7 +323,7 @@ export function App() {
   }, [tab, splitTunnels, splitTunnelsLoading]);
 
   useEffect(() => {
-    if (!selected || selected.kind !== "node") {
+    if (!selected || selected.kind !== "node" || !isNodeInitial(selected.status)) {
       setRoutes([]);
       setRoutesLoading(false);
       return;
@@ -338,7 +349,7 @@ export function App() {
   }, [selected?.id, selected?.kind]);
 
   useEffect(() => {
-    if (!selected || selected.kind !== "node" || !isNodeOffline(selected.status)) {
+    if (!selected || selected.kind !== "node") {
       setInstallCmd(null);
       return;
     }
@@ -365,9 +376,18 @@ export function App() {
     };
   }, [selected?.id, selected?.kind, selected?.status]);
 
+  async function regenerateNodeCode(): Promise<void> {
+    if (!drawerEntry || drawerEntry.kind !== "node") return;
+    await api.recreateNode(drawerEntry.id);
+    closeDrawer();
+  }
+
   const visibleEntries = useMemo(() => {
     const q = search.trim().toLowerCase();
     const filtered = entries.filter((e) => {
+      const online = machineStatusMeta(e.status).tone === "ok";
+      if (activityFilter === "online" && !online) return false;
+      if (activityFilter === "offline" && (online || isNodeInitial(e.status))) return false;
       if (kindFilter !== "all" && e.kind !== kindFilter) return false;
       if (!q) return true;
       return (
@@ -385,7 +405,7 @@ export function App() {
       else cmp = String(va).localeCompare(String(vb));
       return sortDir === "asc" ? cmp : -cmp;
     });
-  }, [entries, kindFilter, sortKey, sortDir, search]);
+  }, [entries, activityFilter, kindFilter, sortKey, sortDir, search]);
 
   function toggleSort(key: SortKey) {
     patchParams((next) => {
@@ -405,13 +425,15 @@ export function App() {
     });
   }
 
-  async function run(key: Exclude<Busy, null>, action: () => Promise<void>) {
+  async function run(key: Exclude<Busy, null>, action: () => Promise<void>): Promise<boolean> {
     setBusy(key);
     try {
       await action();
       await refresh();
+      return true;
     } catch (e) {
       push(e instanceof Error ? e.message : String(e), "error");
+      return false;
     } finally {
       setBusy(null);
     }
@@ -453,7 +475,7 @@ export function App() {
           meshHostname: null,
           ipv4: null,
           ipv6: null,
-          status: "down",
+           status: "inactive",
           lastSeenAt: null,
           createdAt: r.node.created_at ?? new Date().toISOString(),
           tunnelType: "warp_connector",
@@ -527,38 +549,92 @@ export function App() {
                 <span className="hint">({ready ? visibleEntries.length : "…"})</span>
               </h2>
               <div className="filters">
-                {([
-                  ["all", "All"],
-                  ["node", "Nodes"],
-                  ["device", "Devices"],
-                ] as const).map(([value, label]) => (
+                <div className="filters-desktop">
+                  {([
+                    ["all", "All"],
+                    ["online", "Online"],
+                    ["offline", "Offline"],
+                    ["node", "Nodes"],
+                    ["device", "Devices"],
+                  ] as const).map(([value, label]) => (
+                    <button
+                      key={value}
+                      type="button"
+                      className={`btn ${
+                        (value === "node" || value === "device" ? kindFilter === value : kindFilter === "all" && activityFilter === value)
+                          ? "btn-active"
+                          : ""
+                      }`}
+                      disabled={!ready}
+                      onClick={() => {
+                        setFilterOpen(false);
+                        patchParams((next) => {
+                          if (value === "node" || value === "device") {
+                            next.set("kind", value);
+                            next.delete("activity");
+                          } else {
+                            next.delete("kind");
+                            if (value === "online") next.delete("activity");
+                            else next.set("activity", value);
+                          }
+                        });
+                      }}
+                    >
+                      {value === "node" ? (
+                        <span className="filter-label"><Server size={13} strokeWidth={2.25} aria-hidden />{label}</span>
+                      ) : value === "device" ? (
+                        <span className="filter-label"><Smartphone size={13} strokeWidth={2.25} aria-hidden />{label}</span>
+                      ) : label}
+                    </button>
+                  ))}
+                </div>
+                <div className="filters-mobile">
                   <button
-                    key={value}
                     type="button"
-                    className={`btn ${kindFilter === value ? "btn-active" : ""}`}
-                    disabled={!ready}
-                    onClick={() =>
-                      patchParams((next) => {
-                        if (value === "all") next.delete("kind");
-                        else next.set("kind", value);
-                      })
-                    }
+                    className="btn filter-toggle"
+                    aria-expanded={filterOpen}
+                    onClick={() => setFilterOpen((open) => !open)}
                   >
-                    {value === "node" ? (
-                      <span className="filter-label">
-                        <Server size={13} strokeWidth={2.25} aria-hidden />
-                        {label}
-                      </span>
-                    ) : value === "device" ? (
-                      <span className="filter-label">
-                        <Smartphone size={13} strokeWidth={2.25} aria-hidden />
-                        {label}
-                      </span>
-                    ) : (
-                      label
-                    )}
+                    <SlidersHorizontal size={14} strokeWidth={2.25} aria-hidden />
+                    Filter
                   </button>
-                ))}
+                  {filterOpen && (
+                    <div className="filter-menu">
+                      {([
+                        ["all", "All"],
+                        ["online", "Online"],
+                        ["offline", "Offline"],
+                        ["node", "Nodes"],
+                        ["device", "Devices"],
+                      ] as const).map(([value, label]) => (
+                        <button
+                          key={value}
+                          type="button"
+                          className={`btn ${
+                            (value === "node" || value === "device" ? kindFilter === value : kindFilter === "all" && activityFilter === value)
+                              ? "btn-active"
+                              : ""
+                          }`}
+                          onClick={() => {
+                            setFilterOpen(false);
+                            patchParams((next) => {
+                              if (value === "node" || value === "device") {
+                                next.set("kind", value);
+                                next.delete("activity");
+                              } else {
+                                next.delete("kind");
+                                if (value === "online") next.delete("activity");
+                                else next.set("activity", value);
+                              }
+                            });
+                          }}
+                        >
+                          {label}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
                 <button
                   type="button"
                   className="btn btn-icon"
@@ -631,7 +707,7 @@ export function App() {
               </div>
             ) : visibleEntries.length === 0 ? (
               <div className="empty">
-                {search.trim() || kindFilter !== "all"
+                {search.trim() || activityFilter !== "online" || kindFilter !== "all"
                   ? "No machines match this filter."
                   : "No machines yet."}
               </div>
@@ -1144,7 +1220,7 @@ export function App() {
               </button>
             </div>
             <div className="meta">
-              <span className="mono">{drawerEntry.id.slice(0, 8)}…</span>
+               <span className="mono">{drawerEntry.id}</span>
             </div>
 
             <div className="field">
@@ -1330,7 +1406,7 @@ export function App() {
               </div>
             )}
 
-            {drawerEntry.kind === "node" && isNodeOffline(drawerEntry.status) && (
+            {drawerEntry.kind === "node" && isNodeInitial(drawerEntry.status) && (
               <div className="install-box">
                 <div className="row-actions">
                   <strong style={{ fontSize: "0.85rem" }}>Install &amp; connect (warp-cli)</strong>
@@ -1366,12 +1442,12 @@ export function App() {
                     </span>
                   ) : (
                     (installCmd ?? "—")
-                  )}
-                </pre>
+                    )}
+                  </pre>
               </div>
             )}
 
-            {drawerEntry.kind === "node" && (
+            {drawerEntry.kind === "node" && isNodeInitial(drawerEntry.status) && (
               <div style={{ marginTop: "1.25rem" }}>
                 <button
                   className="btn"
@@ -1390,7 +1466,7 @@ export function App() {
                   )}
                 </button>
                 <p className="hint" style={{ marginTop: "0.4rem" }}>
-                  Enrolls a temporary connector to build the config — usually ~20–40 seconds.
+                  Reuses this node&apos;s registration to build a stable config — usually ~20–40 seconds.
                 </p>
               </div>
             )}
@@ -1411,6 +1487,20 @@ export function App() {
               >
                 {busy === "delete" ? <Spinner label="Deleting…" /> : `Delete ${drawerEntry.kind}`}
               </button>
+              {drawerEntry.kind === "node" && (
+                <button
+                  className="btn"
+                  disabled={locked}
+                  onClick={() => {
+                    if (!confirm("Regenerate this node? The current node and its install code will be deleted and replaced.")) return;
+                    void run("regenerate", regenerateNodeCode).then((ok) => {
+                      if (ok) push("Node regenerated. Open the new inactive node to get its install code.", "success");
+                    });
+                  }}
+                >
+                  {busy === "regenerate" ? <Spinner label="Regenerating…" /> : "Regenerate"}
+                </button>
+              )}
             </div>
           </aside>
         </div>

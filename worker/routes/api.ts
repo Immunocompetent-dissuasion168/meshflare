@@ -12,6 +12,7 @@ import {
   getMeshNodeToken,
   listMeshNodeHostnameRoutes,
   listMeshNodeRoutes,
+  recreateMeshNode,
 } from "../cf/mesh";
 import {
   getSettings,
@@ -299,4 +300,10 @@ api.get("/mesh/nodes/:id/token", async (c) => {
   const token = await getMeshNodeToken(cf, c.req.param("id"));
   const decoded = decodeConnectorToken(token);
   return c.json({ token, decoded });
+});
+
+api.post("/mesh/nodes/:id/regenerate", async (c) => {
+  const cf = createCfClient(c.env);
+  const node = await recreateMeshNode(cf, c.req.param("id"));
+  return c.json({ node }, 201);
 });

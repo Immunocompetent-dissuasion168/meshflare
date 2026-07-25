@@ -96,6 +96,10 @@ export const api = {
     ),
   getNodeToken: (id: string) =>
     request<{ token: string; decoded: unknown }>(`/api/mesh/nodes/${id}/token`),
+  recreateNode: (id: string) =>
+    request<{ node: { id: string; name: string; created_at?: string } }>(`/api/mesh/nodes/${id}/regenerate`, {
+      method: "POST",
+    }),
   listNodeRoutes: (id: string) =>
     request<{ routes: MeshRoute[] }>(`/api/mesh/nodes/${id}/routes`),
   createNodeRoute: (

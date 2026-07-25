@@ -117,6 +117,36 @@ export async function deleteMeshNode(
   await cf.request("DELETE", cf.accountPath(`/warp_connector/${tunnelId}`));
 }
 
+/** Replace a node with a fresh inactive tunnel while preserving its name and routes. */
+export async function recreateMeshNode(
+  cf: CloudflareClient,
+  tunnelId: string,
+): Promise<MeshNode> {
+  const node = (await listMeshNodes(cf)).find((item) => item.id === tunnelId);
+  if (!node) throw new Error("Mesh node not found");
+
+  const [routes, hostnameRoutes] = await Promise.all([
+    listMeshNodeRoutes(cf, tunnelId),
+    listMeshNodeHostnameRoutes(cf, tunnelId),
+  ]);
+  for (const route of routes) {
+    if (route.id) await deleteMeshNodeRoute(cf, route.id);
+  }
+  for (const route of hostnameRoutes) {
+    if (route.id) await deleteMeshNodeHostnameRoute(cf, route.id);
+  }
+  await cf.request("DELETE", cf.accountPath(`/warp_connector/${tunnelId}`));
+
+  const replacement = await createMeshNode(cf, node.name);
+  for (const route of routes) {
+    if (route.network) await createMeshNodeRoute(cf, replacement.id, route.network, route.comment);
+  }
+  for (const route of hostnameRoutes) {
+    if (route.hostname) await createMeshNodeHostnameRoute(cf, replacement.id, route.hostname, route.comment);
+  }
+  return replacement;
+}
+
 /** Base64 connector token JSON `{a,t,s}` for warp-cli / WireGuard extract. */
 export async function getMeshNodeToken(
   cf: CloudflareClient,

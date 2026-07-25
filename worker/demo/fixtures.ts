@@ -44,7 +44,7 @@ export function buildDemoEntries(now = Date.now()): MeshEntry[] {
       meshHostname: null,
       ipv4: null,
       ipv6: null,
-      status: "down",
+       status: "inactive",
       lastSeenAt: null,
       createdAt: daysAgo(3, now),
       tunnelType: "warp_connector",

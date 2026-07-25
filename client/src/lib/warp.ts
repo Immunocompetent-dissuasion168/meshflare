@@ -21,9 +21,8 @@ export function dnsFilterStatusMeta(status: string, enabled: boolean): {
   }
 }
 
-export function isNodeOffline(status: string): boolean {
-  const s = status.toLowerCase();
-  return s !== "healthy" && s !== "up";
+export function isNodeInitial(status: string): boolean {
+  return status.trim().toLowerCase() === "inactive";
 }
 
 /** Colored status pill for machine inventory rows. */
@@ -35,7 +34,8 @@ export function machineStatusMeta(status: string): {
   const s = label.toLowerCase();
   if (s === "healthy" || s === "up" || s === "online") return { tone: "ok", label };
   if (s === "registered" || s === "active" || s === "connected") return { tone: "ok", label };
-  if (s === "down" || s === "inactive" || s === "offline" || s === "disconnected") {
+  if (s === "inactive") return { tone: "off", label };
+  if (s === "down" || s === "offline" || s === "disconnected") {
     return { tone: "danger", label };
   }
   if (s.includes("pending") || s.includes("connect") || s.includes("sync")) {

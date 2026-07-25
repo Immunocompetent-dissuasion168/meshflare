@@ -17,10 +17,13 @@ fi
 REG=/var/lib/cloudflare-warp/reg.json
 CONF=/var/lib/cloudflare-warp/conf.json
 WG_PUBKEY_EXPECTED="bmXOC+F1FxEMF9dyiK2H5/1SUtzH0JuVo51h2wPfgyo="
+STATE_BASE="${DATA_DIR:-/data}/wireguard-state"
+TOKEN_KEY=$(printf '%s' "$TOKEN" | sha256sum | cut -d ' ' -f 1)
+STATE_DIR="$STATE_BASE/$TOKEN_KEY"
+ACTIVE_KEY_FILE="$STATE_BASE/active"
 
 stop_warp() {
   warp-cli --accept-tos disconnect >/dev/null 2>&1 || true
-  warp-cli --accept-tos registration delete >/dev/null 2>&1 || true
   pkill -x warp-svc >/dev/null 2>&1 || true
   pkill -9 -x warp-svc >/dev/null 2>&1 || true
   i=0
@@ -32,10 +35,15 @@ stop_warp() {
 
 cleanup() {
   stop_warp
+  # Keep the registration and keys. Deleting it would revoke the downloaded
+  # WireGuard config and release its assigned device IP.
+  rm -rf "$STATE_DIR"
+  mkdir -p "$STATE_DIR"
+  cp -a /var/lib/cloudflare-warp/. "$STATE_DIR/"
 }
-trap cleanup EXIT
 
 mkdir -p /tmp
+mkdir -p "$STATE_BASE"
 if [ ! -d /run/dbus ]; then
   echo "WireGuard generation requires a writable /run mount for D-Bus." >&2
   exit 1
@@ -55,11 +63,27 @@ if ! pgrep -x dbus-daemon >/dev/null 2>&1; then
   dbus-daemon --system >/tmp/dbus.log 2>&1 || true
 fi
 
-# Long-lived app container: clear prior enrollment so "connector new" does not
-# hit "Old registration is still around".
+# Stop the short-lived extraction daemon, but do not unregister the device. The
+# registration is what gives a generated config its stable key and device IP.
 stop_warp
+
+# Swap the daemon's local state for this connector token. A Meshflare container
+# can generate configs for multiple nodes, but each node needs its own keys.
+if [ -f "$ACTIVE_KEY_FILE" ]; then
+  ACTIVE_KEY=$(cat "$ACTIVE_KEY_FILE")
+  if [ "$ACTIVE_KEY" != "$TOKEN_KEY" ] && [ -f "$REG" ]; then
+    rm -rf "$STATE_BASE/$ACTIVE_KEY"
+    mkdir -p "$STATE_BASE/$ACTIVE_KEY"
+    cp -a /var/lib/cloudflare-warp/. "$STATE_BASE/$ACTIVE_KEY/"
+  fi
+fi
 rm -rf /var/lib/cloudflare-warp
 mkdir -p /var/lib/cloudflare-warp
+if [ -f "$STATE_DIR/reg.json" ] && [ -f "$STATE_DIR/conf.json" ]; then
+  cp -a "$STATE_DIR/." /var/lib/cloudflare-warp/
+fi
+printf '%s\n' "$TOKEN_KEY" > "$ACTIVE_KEY_FILE"
+trap cleanup EXIT
 
 /bin/warp-svc >/tmp/warp-svc.log 2>&1 &
 
@@ -74,12 +98,16 @@ while [ "$i" -lt 40 ]; do
 done
 
 # Redirect CLI chatter ("Success") away from stdout — stdout is the .conf only.
-if ! warp-cli --accept-tos connector new "$TOKEN" >/tmp/wg-connector.out 2>/tmp/wg-connector.err; then
-  echo "warp-cli connector new failed:" >&2
-  cat /tmp/wg-connector.err /tmp/wg-connector.out >&2 || true
-  echo "--- warp-svc.log ---" >&2
-  tail -n 80 /tmp/warp-svc.log >&2 || true
-  exit 1
+NEEDS_CONNECT=0
+if [ ! -f "$REG" ] || [ ! -f "$CONF" ]; then
+  if ! warp-cli --accept-tos connector new "$TOKEN" >/tmp/wg-connector.out 2>/tmp/wg-connector.err; then
+    echo "warp-cli connector new failed:" >&2
+    cat /tmp/wg-connector.err /tmp/wg-connector.out >&2 || true
+    echo "--- warp-svc.log ---" >&2
+    tail -n 80 /tmp/warp-svc.log >&2 || true
+    exit 1
+  fi
+  NEEDS_CONNECT=1
 fi
 
 # Wait for registration files, then for WireGuard peer key (MASQUE can appear first).
@@ -106,6 +134,17 @@ PUBKEY=$(jq -r .public_key < "$CONF")
 if [ "$PUBKEY" != "$WG_PUBKEY_EXPECTED" ]; then
   echo "Error: Got MASQUE instead of WireGuard (public_key=$PUBKEY). Set the device profile tunnel protocol to WireGuard." >&2
   exit 1
+fi
+
+if [ "$NEEDS_CONNECT" -eq 1 ]; then
+  # Cloudflare's Mesh setup requires an explicit connect after enrollment.
+  if ! warp-cli --accept-tos connect >/tmp/wg-connect.out 2>/tmp/wg-connect.err; then
+    echo "warp-cli connect failed:" >&2
+    cat /tmp/wg-connect.err /tmp/wg-connect.out >&2 || true
+    echo "--- warp-svc.log ---" >&2
+    tail -n 80 /tmp/warp-svc.log >&2 || true
+    exit 1
+  fi
 fi
 
 # Materialize conf before EXIT trap tears warp down.

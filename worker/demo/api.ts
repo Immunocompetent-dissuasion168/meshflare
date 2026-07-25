@@ -31,6 +31,10 @@ demoApi.get("/mesh/nodes/:id/routes", (c) =>
   c.json({ routes: buildDemoRoutes(c.req.param("id")) }),
 );
 
+demoApi.get("/mesh/nodes/:id/token", (c) =>
+  c.json({ token: "demo-connector-token", decoded: { demo: true } }),
+);
+
 demoApi.get("/settings/split-tunnels", (c) =>
   c.json({
     mode: "include" as const,
