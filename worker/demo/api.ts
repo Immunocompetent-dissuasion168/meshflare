@@ -75,6 +75,22 @@ demoApi.get("/tunnels/:id/connections", (c) => {
   return c.json(tunnel?.connections ?? []);
 });
 
+demoApi.post("/tunnels", (c) => {
+  throw new HTTPException(403, { message: DEMO_READ_ONLY });
+});
+
+demoApi.patch("/tunnels/:id", (c) => {
+  throw new HTTPException(403, { message: DEMO_READ_ONLY });
+});
+
+demoApi.delete("/tunnels/:id", (c) => {
+  throw new HTTPException(403, { message: DEMO_READ_ONLY });
+});
+
+demoApi.put("/tunnels/:id/config", (c) => {
+  throw new HTTPException(403, { message: DEMO_READ_ONLY });
+});
+
 demoApi.all("/*", (c) => {
   if (c.req.method === "GET" || c.req.method === "HEAD") {
     throw new HTTPException(404, { message: "Not found" });

@@ -454,8 +454,10 @@ export function TunnelsPanel({ demo, locked: parentLocked }: TunnelsPanelProps) 
                 disabled={locked || !renameValue.trim() || renameValue.trim() === selected.name}
                 onClick={() =>
                   void run("config", async () => {
-                    await api.updateTunnel(selected.id, { name: renameValue.trim() });
-                    push(`Renamed to "${renameValue.trim()}".`, "success");
+                    const updated = await api.updateTunnel(selected.id, { name: renameValue.trim() });
+                    setSelected(updated);
+                    setRenameValue(updated.name);
+                    push(`Renamed to "${updated.name}".`, "success");
                   })
                 }
               >
