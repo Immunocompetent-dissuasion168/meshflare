@@ -45,8 +45,8 @@ Self-hostable [Cloudflare](https://www.cloudflare.com/) Mesh & Tunnel manager. O
 | Name | Notes |
 |------|--------|
 | `CLOUDFLARE_ACCOUNT_ID` | required (unless `DEMO_MODE`) |
-| `CLOUDFLARE_API_TOKEN` | preferred |
-| `CLOUDFLARE_API_KEY` + `CLOUDFLARE_EMAIL` | alt |
+| `CLOUDFLARE_API_KEY` + `CLOUDFLARE_EMAIL` | preferred (Global API Key — required for Tunnel writes) |
+| `CLOUDFLARE_API_TOKEN` | alternative — may need `Cloudflare Tunnel Write` permission |
 | `DATA_DIR` | default `/data` (lowdb + filter cache) |
 | `PORT` | default `3000` |
 | `DEMO_MODE` | `true` / `1` — fixture data, all writes return 403 |
