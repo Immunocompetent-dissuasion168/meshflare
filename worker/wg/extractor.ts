@@ -41,7 +41,7 @@ export function sanitizeWireGuardConf(raw: string): string {
   return `${conf}\n`;
 }
 
-export async function extractWireGuardConf(token: string): Promise<string> {
+export async function extractWireGuardConf(token: string, dnsServers: string[]): Promise<string> {
   let release!: () => void;
   const gate = new Promise<void>((resolve) => {
     release = resolve;
@@ -55,6 +55,7 @@ export async function extractWireGuardConf(token: string): Promise<string> {
       env: {
         ...process.env,
         CONNECTOR_TOKEN: token,
+        WARP_DNS_SERVERS: dnsServers.join(", "),
       },
       stdout: "pipe",
       stderr: "pipe",

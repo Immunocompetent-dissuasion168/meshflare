@@ -44,7 +44,8 @@ type Busy =
   | "regenerate"
   | "delete"
   | "domain"
-  | "filter-url";
+  | "filter-url"
+  | "dns-endpoint";
 
 const SORT_KEYS: SortKey[] = [
   "name",
@@ -190,6 +191,7 @@ export function App() {
   const [offlineDays, setOfflineDays] = useState(7);
   const [meshSuffixDraft, setMeshSuffixDraft] = useState("mesh");
   const [filterUrlDraft, setFilterUrlDraft] = useState("https://small.oisd.nl/");
+  const [dnsSourceNetworkDraft, setDnsSourceNetworkDraft] = useState("");
   const [, startTransition] = useTransition();
   const [busy, setBusy] = useState<Busy>(null);
   const [ready, setReady] = useState(false);
@@ -260,6 +262,7 @@ export function App() {
     setOfflineDays(s.offlineDays);
     setMeshSuffixDraft(s.meshSuffix);
     setFilterUrlDraft(s.dnsFilterUrl);
+    setDnsSourceNetworkDraft(s.dnsLocation?.sourceNetworks[0] ?? "");
     setReady(true);
     return mesh.entries;
   }
@@ -493,6 +496,7 @@ export function App() {
   }
 
   const filterMeta = dnsFilterStatusMeta(settings?.dnsFilterStatus ?? "idle", settings?.dnsFilterEnabled ?? false);
+  const dnsLocation = settings?.dnsLocation;
   const settingsReady = ready && settings !== null;
   const accountLine = settings?.accountName
     ? settings.accountEmail
@@ -917,8 +921,120 @@ export function App() {
                 </div>
               </div>
 
+              <div className="settings-block dns-endpoints-block">
+                <h3>Zero Trust DNS endpoints</h3>
+                <p className="hint">
+                  Control which Gateway resolver endpoints are available to generated WireGuard configs.
+                </p>
+                {!dnsLocation ? (
+                  <p className="hint dns-endpoint-warning">No default Gateway DNS location found.</p>
+                ) : (
+                  <>
+                    <div className="field dns-source-network-field">
+                      <label htmlFor="dns-source-network">Shared IPv4 source network</label>
+                      <input
+                        id="dns-source-network"
+                        type="text"
+                        placeholder="203.0.113.42/32"
+                        value={dnsSourceNetworkDraft}
+                        disabled={locked}
+                        onChange={(e) => setDnsSourceNetworkDraft(e.target.value)}
+                      />
+                      <p className="hint">
+                        Required by Cloudflare before enabling the shared IPv4 endpoint. Use the public egress IP/CIDR, not a Mesh IP.
+                      </p>
+                      <button
+                        className="btn"
+                        disabled={locked || dnsSourceNetworkDraft.trim() === (dnsLocation.sourceNetworks[0] ?? "")}
+                        onClick={() =>
+                          void run("dns-endpoint", async () => {
+                            await api.patchSettings({ dnsSourceNetwork: dnsSourceNetworkDraft });
+                            push(
+                              dnsLocation.endpoints.ipv4
+                                ? "DNS source network saved."
+                                : "DNS source network saved and IPv4 endpoint enabled.",
+                              "success",
+                            );
+                          })
+                        }
+                      >
+                        {busy === "dns-endpoint" ? (
+                          <Spinner label="Saving…" />
+                        ) : dnsLocation.endpoints.ipv4 ? (
+                          "Save source network"
+                        ) : (
+                          "Save and enable IPv4"
+                        )}
+                      </button>
+                    </div>
+                    <div className="dns-endpoint-list">
+                    {(
+                      [
+                        {
+                          key: "ipv4" as const,
+                          label: "IPv4 endpoint",
+                          value: [dnsLocation.ipv4Destination, dnsLocation.ipv4DestinationBackup]
+                            .filter(Boolean)
+                            .join(" · "),
+                        },
+                        {
+                          key: "ipv6" as const,
+                          label: "IPv6 endpoint",
+                          value: dnsLocation.ipv6Destination ?? "",
+                        },
+                        {
+                          key: "doh" as const,
+                          label: "DoH endpoint",
+                          value: dnsLocation.dohSubdomain
+                            ? `https://${dnsLocation.dohSubdomain}.cloudflare-gateway.com/dns-query`
+                            : "",
+                        },
+                      ]
+                    ).map((endpoint) => {
+                      const enabled = dnsLocation.endpoints[endpoint.key];
+                      return (
+                        <div className="dns-endpoint-row" key={endpoint.key}>
+                          <div className="dns-endpoint-head">
+                            <strong>{endpoint.label}</strong>
+                            <label className={`mode-switch ${enabled ? "include" : ""}`}>
+                              <span className="sr-only">{endpoint.label}</span>
+                              <input
+                                type="checkbox"
+                                checked={enabled}
+                                disabled={locked || busy === "dns-endpoint" || !endpoint.value}
+                                onChange={() =>
+                                  void run("dns-endpoint", async () => {
+                                    await api.patchSettings({
+                                      [`dns${endpoint.key === "ipv4" ? "Ipv4" : endpoint.key === "ipv6" ? "Ipv6" : "Doh"}Enabled`]: !enabled,
+                                    });
+                                    push(
+                                      `${endpoint.label} ${enabled ? "disabled" : "enabled"}.`,
+                                      "success",
+                                    );
+                                  })
+                                }
+                              />
+                              <span className="switch-track" aria-hidden>
+                                <span />
+                              </span>
+                              <span>{enabled ? "On" : "Off"}</span>
+                            </label>
+                          </div>
+                          {enabled && endpoint.value ? (
+                            <p className="dns-endpoint-value mono">{endpoint.value}</p>
+                          ) : (
+                            <p className="hint">Disabled</p>
+                          )}
+                        </div>
+                      );
+                    })}
+                    </div>
+                  </>
+                )}
+              </div>
 
-              <div className="settings-block">
+
+              <div className="settings-block maintenance-block">
                 <h3>Maintenance</h3>
                 <div className="maint-row">
                   <div>

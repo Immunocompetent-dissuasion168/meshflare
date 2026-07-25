@@ -43,6 +43,22 @@ Self-hostable [Cloudflare](https://www.cloudflare.com/) Mesh manager. One Docker
 | `PORT` | default `3000` |
 | `DEMO_MODE` | `true` / `1` — fixture data, all writes return 403 |
 
+### Cloudflare API permissions
+
+Use an account-scoped API token whenever possible. Meshflare needs these Cloudflare account permissions:
+
+| Permission | Used for |
+|------------|----------|
+| `Zero Trust Read` | Read Mesh nodes, WARP registrations, Gateway rules, device policies, and DNS locations |
+| `Zero Trust Write` | Create, rename, delete, and route Mesh nodes; manage Gateway DNS rules and device policies |
+| `Cloudflare Zero Trust Secure DNS Locations Write` | Enable IPv4/IPv6/DoH endpoints and update DNS location source networks from Settings |
+
+`Zero Trust Write` may already include the read capabilities in your token template. If Cloudflare presents separate read/write choices, grant both. The Secure DNS Locations permission is required even when the token can otherwise manage Zero Trust resources.
+
+The alternative `CLOUDFLARE_API_KEY` + `CLOUDFLARE_EMAIL` uses a Global API Key and has broad account access; use it only when an API token is not available. Never commit either credential or place it in a public image.
+
+WireGuard configs use your account's DNS endpoints, so Gateway policies can apply, and Meshflare reuses registration keys and device IPs.
+
 ```bash
 cp .env.example .env
 bun install

@@ -3,7 +3,7 @@ import { HTTPException } from "hono/http-exception";
 import { fetchAccountInfo } from "../cf/account";
 import { cleanupOfflineDevices } from "../cf/cleanup";
 import { createCfClient, CloudflareApiError } from "../cf/client";
-import { buildMeshInventory, syncMeshDns, syncMeshDnsAfterDelete, syncMeshDnsAfterRename } from "../cf/dns";
+import { buildMeshInventory, getDefaultGatewayDns, getDefaultGatewayDnsLocation, serializeGatewayDnsLocation, syncMeshDns, syncMeshDnsAfterDelete, syncMeshDnsAfterRename, updateDefaultGatewayDnsLocation } from "../cf/dns";
 import {
   createMeshNodeHostnameRoute,
   createMeshNodeRoute,
@@ -50,14 +50,16 @@ api.get("/health", (c) => c.json({ ok: true, service: "meshflare" }));
 
 api.get("/settings", async (c) => {
   const cf = createCfClient(c.env);
-  const [settings, account] = await Promise.all([
+  const [settings, account, dnsLocation] = await Promise.all([
     getSettings(c.env),
     fetchAccountInfo(cf, c.env.CLOUDFLARE_EMAIL),
+    getDefaultGatewayDnsLocation(cf),
   ]);
   return c.json({
     ...settings,
     accountName: account.name,
     accountEmail: account.email,
+    dnsLocation: serializeGatewayDnsLocation(dnsLocation),
   });
 });
 
@@ -67,9 +69,27 @@ api.patch("/settings", async (c) => {
     dnsFilterEnabled?: boolean;
     dnsFilterUrl?: string;
     meshSuffix?: string;
+    dnsIpv4Enabled?: boolean;
+    dnsIpv6Enabled?: boolean;
+    dnsDohEnabled?: boolean;
+    dnsSourceNetwork?: string;
   }>();
   const before = await getSettings(c.env);
   const settings = await updateSettings(c.env, body);
+  const dnsEndpointTouched =
+    body.dnsIpv4Enabled !== undefined || body.dnsIpv6Enabled !== undefined || body.dnsDohEnabled !== undefined || body.dnsSourceNetwork !== undefined;
+  let dnsLocation = null;
+  if (dnsEndpointTouched) {
+    const cf = createCfClient(c.env);
+    dnsLocation = await updateDefaultGatewayDnsLocation(cf, {
+      ipv4: body.dnsIpv4Enabled,
+      ipv6: body.dnsIpv6Enabled,
+      doh: body.dnsDohEnabled,
+      ...(body.dnsSourceNetwork !== undefined
+        ? { sourceNetworks: body.dnsSourceNetwork.trim() ? [body.dnsSourceNetwork.trim()] : [] }
+        : {}),
+    });
+  }
 
   const suffixChanged =
     body.meshSuffix !== undefined && settings.meshSuffix !== before.meshSuffix;
@@ -90,11 +110,15 @@ api.patch("/settings", async (c) => {
   }
 
   const cf = createCfClient(c.env);
-  const account = await fetchAccountInfo(cf, c.env.CLOUDFLARE_EMAIL);
+  const [account, currentDnsLocation] = await Promise.all([
+    fetchAccountInfo(cf, c.env.CLOUDFLARE_EMAIL),
+    dnsEndpointTouched ? Promise.resolve(null) : getDefaultGatewayDnsLocation(cf),
+  ]);
   return c.json({
     ...(await getSettings(c.env)),
     accountName: account.name,
     accountEmail: account.email,
+    dnsLocation: dnsLocation ?? serializeGatewayDnsLocation(currentDnsLocation),
   });
 });
 
@@ -255,12 +279,13 @@ api.post("/mesh/nodes/:id/wireguard", async (c) => {
   const id = c.req.param("id");
   const token = await getMeshNodeToken(cf, id);
   decodeConnectorToken(token);
+  const dnsServers = await getDefaultGatewayDns(cf);
 
   const inventory = await buildMeshInventory(cf, c.env);
   const node = inventory.find((e) => e.kind === "node" && e.id === id);
   const name = node?.name ?? id;
 
-  const job = startWireGuardJob({ nodeId: id, filename: name, token });
+  const job = startWireGuardJob({ nodeId: id, filename: name, token, dnsServers });
   return c.json({ jobId: job.id, status: job.status, filename: job.filename }, 202);
 });
 

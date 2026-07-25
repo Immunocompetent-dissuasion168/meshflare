@@ -9,6 +9,12 @@ if [ -z "$TOKEN" ]; then
   exit 1
 fi
 
+DNS_SERVERS="${WARP_DNS_SERVERS:-}"
+if [ -z "$DNS_SERVERS" ]; then
+  echo "WARP_DNS_SERVERS required (use the Zero Trust DNS location endpoints)" >&2
+  exit 1
+fi
+
 if ! command -v warp-cli >/dev/null 2>&1; then
   echo "warp-cli not installed (WireGuard extract requires the meshflare Docker image)" >&2
   exit 1
@@ -156,7 +162,7 @@ cat > "$OUT" <<EOL
 [Interface]
 PrivateKey = $(jq -r .secret_key < "$REG")
 Address = $(jq -r .interface.v6 < "$CONF")/128, $(jq -r .interface.v4 < "$CONF")/32
-DNS = 2606:4700:4700::1111, 2606:4700:4700::1001, 1.1.1.1, 1.0.0.1
+DNS = $DNS_SERVERS
 MTU = 1420
 
 [Peer]

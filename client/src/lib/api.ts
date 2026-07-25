@@ -46,6 +46,17 @@ export type Settings = {
   accountName?: string | null;
   accountEmail?: string | null;
   demo?: boolean;
+  dnsLocation?: {
+    id: string;
+    name?: string;
+    clientDefault: boolean;
+    dohSubdomain?: string;
+    ipv4Destination?: string;
+    ipv4DestinationBackup?: string;
+    ipv6Destination?: string;
+    sourceNetworks: string[];
+    endpoints: { ipv4: boolean; ipv6: boolean; doh: boolean };
+  } | null;
 };
 
 export type SettingsPatch = Partial<{
@@ -53,6 +64,10 @@ export type SettingsPatch = Partial<{
   dnsFilterEnabled: boolean;
   dnsFilterUrl: string;
   meshSuffix: string;
+  dnsIpv4Enabled: boolean;
+  dnsIpv6Enabled: boolean;
+  dnsDohEnabled: boolean;
+  dnsSourceNetwork: string;
 }>;
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {

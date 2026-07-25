@@ -159,6 +159,17 @@ export function buildDemoSettings(now = Date.now()): Settings & { demo: true } {
     lastCleanupAt: daysAgo(1, now),
     accountName: "Demo Org",
     accountEmail: "demo@meshflare.example",
+    dnsLocation: {
+      id: "demo-dns-location",
+      name: "Default",
+      clientDefault: true,
+      dohSubdomain: "demo-location",
+      ipv4Destination: "172.64.36.1",
+      ipv4DestinationBackup: "172.64.36.2",
+      ipv6Destination: "2a06:98c1:54::24:8c7c",
+      sourceNetworks: [],
+      endpoints: { ipv4: false, ipv6: false, doh: true },
+    },
   };
 }
 

@@ -122,6 +122,21 @@ export type Settings = {
   accountEmail?: string | null;
   /** Present when DEMO_MODE is on. */
   demo?: boolean;
+  dnsLocation?: {
+    id: string;
+    name?: string;
+    clientDefault: boolean;
+    dohSubdomain?: string;
+    ipv4Destination?: string;
+    ipv4DestinationBackup?: string;
+    ipv6Destination?: string;
+    sourceNetworks: string[];
+    endpoints: {
+      ipv4: boolean;
+      ipv6: boolean;
+      doh: boolean;
+    };
+  } | null;
 };
 
 export type CfApiResult<T> = {

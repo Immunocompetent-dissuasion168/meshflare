@@ -40,6 +40,7 @@ export function startWireGuardJob(input: {
   nodeId: string;
   filename: string;
   token: string;
+  dnsServers: string[];
 }): WireGuardJob {
   pruneJobs();
   const job: WireGuardJob = {
@@ -55,7 +56,7 @@ export function startWireGuardJob(input: {
 
   void (async () => {
     try {
-      const conf = await extractWireGuardConf(input.token);
+      const conf = await extractWireGuardConf(input.token, input.dnsServers);
       job.conf = conf;
       job.status = "done";
       job.finishedAt = Date.now();

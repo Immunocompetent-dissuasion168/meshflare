@@ -7,7 +7,7 @@ import {
   meshHostname,
   slugifyName,
 } from "./names";
-import type { DeviceRegistration, Env, MeshEntry, MeshNode } from "../types";
+import type { DeviceRegistration, Env, MeshEntry, MeshNode, Settings } from "../types";
 
 type GatewayRule = {
   id: string;
@@ -19,6 +19,114 @@ type GatewayRule = {
   filters?: string[];
   rule_settings?: { override_ips?: string[] };
 };
+
+export type GatewayLocation = {
+  id?: string;
+  name?: string;
+  client_default?: boolean;
+  doh_subdomain?: string;
+  endpoints?: {
+    ipv4?: { enabled?: boolean };
+    ipv6?: { enabled?: boolean };
+    doh?: { enabled?: boolean; require_token?: boolean };
+    dot?: { enabled?: boolean; require_token?: boolean };
+  };
+  ip?: string;
+  ipv4_destination?: string;
+  ipv4_destination_backup?: string;
+  networks?: Array<{ network?: string }>;
+};
+
+export type GatewayDnsEndpointUpdate = {
+  ipv4?: boolean;
+  ipv6?: boolean;
+  doh?: boolean;
+  sourceNetworks?: string[];
+};
+
+export async function getDefaultGatewayDnsLocation(
+  cf: CloudflareClient,
+): Promise<GatewayLocation | null> {
+  const res = await cf.request<GatewayLocation[]>("GET", cf.accountPath("/gateway/locations"));
+  return res.result?.find((item) => item.client_default) ?? null;
+}
+
+export function serializeGatewayDnsLocation(
+  location: GatewayLocation | null,
+): Settings["dnsLocation"] {
+  if (!location?.id) return null;
+  return {
+    id: location.id,
+    name: location.name,
+    clientDefault: Boolean(location.client_default),
+    dohSubdomain: location.doh_subdomain,
+    ipv4Destination: location.ipv4_destination,
+    ipv4DestinationBackup: location.ipv4_destination_backup,
+    ipv6Destination: location.ip,
+    sourceNetworks: (location.networks ?? [])
+      .map((item) => item.network)
+      .filter((network): network is string => Boolean(network)),
+    endpoints: {
+      ipv4: Boolean(location.endpoints?.ipv4?.enabled),
+      ipv6: Boolean(location.endpoints?.ipv6?.enabled),
+      doh: Boolean(location.endpoints?.doh?.enabled),
+    },
+  };
+}
+
+export async function updateDefaultGatewayDnsLocation(
+  cf: CloudflareClient,
+  update: GatewayDnsEndpointUpdate,
+): Promise<NonNullable<Settings["dnsLocation"]>> {
+  const location = await getDefaultGatewayDnsLocation(cf);
+  if (!location?.id) throw new Error("Cloudflare Zero Trust has no default DNS location");
+  const endpoints = location.endpoints ?? {};
+  const enableIpv4ForNetwork = Boolean(update.sourceNetworks?.length) && update.ipv4 === undefined;
+  const res = await cf.request<GatewayLocation>(
+    "PUT",
+    cf.accountPath(`/gateway/locations/${location.id}`),
+    {
+      name: location.name,
+      client_default: location.client_default,
+      endpoints: {
+        ...endpoints,
+        ...(update.ipv4 === undefined && !enableIpv4ForNetwork
+          ? {}
+          : { ipv4: { ...endpoints.ipv4, enabled: update.ipv4 ?? true } }),
+        ...(update.ipv6 === undefined ? {} : { ipv6: { ...endpoints.ipv6, enabled: update.ipv6 } }),
+        ...(update.doh === undefined ? {} : { doh: { ...endpoints.doh, enabled: update.doh } }),
+      },
+      ...(update.sourceNetworks
+        ? { networks: update.sourceNetworks.map((network) => ({ network })) }
+        : {}),
+    },
+  );
+  const updated = serializeGatewayDnsLocation(res.result);
+  if (!updated) throw new Error("Cloudflare Zero Trust returned an invalid DNS location");
+  return updated;
+}
+
+/** Return the account's default Zero Trust DNS location endpoints. */
+export async function getDefaultGatewayDns(cf: CloudflareClient): Promise<string[]> {
+  const location = await getDefaultGatewayDnsLocation(cf);
+  if (!location) {
+    throw new Error("Cloudflare Zero Trust has no default DNS location");
+  }
+
+  const dns: string[] = [];
+  if (location.endpoints?.ipv6?.enabled && location.ip) {
+    dns.push(location.ip);
+  }
+  if (location.endpoints?.ipv4?.enabled) {
+    for (const address of [location.ipv4_destination, location.ipv4_destination_backup]) {
+      if (address && !dns.includes(address)) dns.push(address);
+    }
+  }
+  if (dns.length === 0) {
+    throw new Error("Cloudflare Zero Trust default DNS location has no enabled DNS endpoints");
+  }
+  return dns;
+}
 
 function parseFqdnFromTraffic(traffic: string | undefined): string | null {
   if (!traffic) return null;
