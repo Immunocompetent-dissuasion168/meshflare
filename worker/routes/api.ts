@@ -2,6 +2,18 @@ import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { fetchAccountInfo } from "../cf/account";
 import { cleanupOfflineDevices } from "../cf/cleanup";
+import {
+  listTunnels,
+  createTunnel,
+  getTunnel,
+  updateTunnel,
+  deleteTunnel,
+  getTunnelToken,
+  getTunnelConfig,
+  setTunnelConfig,
+  getTunnelConnections,
+} from "../cf/cloudflare-tunnel";
+import type { CloudflareConnector } from "../types";
 import { createCfClient, CloudflareApiError } from "../cf/client";
 import { buildMeshInventory, getDefaultGatewayDns, getDefaultGatewayDnsLocation, serializeGatewayDnsLocation, syncMeshDns, syncMeshDnsAfterDelete, syncMeshDnsAfterRename, updateDefaultGatewayDnsLocation } from "../cf/dns";
 import {
@@ -27,7 +39,7 @@ import {
   renameWithCollisionHandling,
 } from "../cf/rename";
 import { getDefaultSplitTunnels, setDefaultSplitTunnels } from "../cf/split-tunnels";
-import type { Env } from "../types";
+import type { CloudflareTunnelConnection, Env } from "../types";
 import { decodeConnectorToken } from "../wg/extractor";
 import { getWireGuardJob, startWireGuardJob } from "../wg/jobs";
 
@@ -331,4 +343,82 @@ api.post("/mesh/nodes/:id/regenerate", async (c) => {
   const cf = createCfClient(c.env);
   const node = await recreateMeshNode(cf, c.req.param("id"));
   return c.json({ node }, 201);
+});
+
+// ── Cloudflare Tunnel routes ──────────────────────────────────────────────
+
+api.get("/tunnels", async (c) => {
+  const cf = createCfClient(c.env);
+  const tunnels = await listTunnels(cf);
+  return c.json({ tunnels });
+});
+
+api.post("/tunnels", async (c) => {
+  const body = await c.req.json<{ name?: string; config_src?: "local" | "cloudflare" }>();
+  if (!body.name?.trim()) throw new HTTPException(400, { message: "name is required" });
+  const cf = createCfClient(c.env);
+  const tunnel = await createTunnel(cf, body.name.trim(), body.config_src);
+  return c.json({ tunnel }, 201);
+});
+
+api.get("/tunnels/:id", async (c) => {
+  const cf = createCfClient(c.env);
+  const tunnel = await getTunnel(cf, c.req.param("id"));
+  return c.json(tunnel);
+});
+
+api.patch("/tunnels/:id", async (c) => {
+  const body = await c.req.json<{ name?: string; config_src?: "local" | "cloudflare" }>();
+  const cf = createCfClient(c.env);
+  const tunnel = await updateTunnel(cf, c.req.param("id"), body);
+  return c.json(tunnel);
+});
+
+api.delete("/tunnels/:id", async (c) => {
+  const cf = createCfClient(c.env);
+  await deleteTunnel(cf, c.req.param("id"));
+  return c.json({ ok: true });
+});
+
+api.get("/tunnels/:id/token", async (c) => {
+  const cf = createCfClient(c.env);
+  const token = await getTunnelToken(cf, c.req.param("id"));
+  return c.json({ token });
+});
+
+api.get("/tunnels/:id/config", async (c) => {
+  const cf = createCfClient(c.env);
+  const config = await getTunnelConfig(cf, c.req.param("id"));
+  return c.json(config);
+});
+
+api.put("/tunnels/:id/config", async (c) => {
+  const body = await c.req.json<{
+    config?: { ingress?: Array<{ hostname?: string; path?: string; service: string }> };
+  }>();
+  if (!body.config?.ingress || !Array.isArray(body.config.ingress)) {
+    throw new HTTPException(400, { message: "config.ingress array is required" });
+  }
+  const cf = createCfClient(c.env);
+  const config = await setTunnelConfig(cf, c.req.param("id"), body as Parameters<typeof setTunnelConfig>[2]);
+  return c.json(config);
+});
+
+api.get("/tunnels/:id/connections", async (c) => {
+  const cf = createCfClient(c.env);
+  const raw = await getTunnelConnections(cf, c.req.param("id"));
+  const flat: CloudflareTunnelConnection[] = raw.flatMap(
+    (client: CloudflareConnector) =>
+      (client.conns ?? []).map((conn: CloudflareTunnelConnection) => ({
+        id: conn.id ?? conn.uuid,
+        uuid: conn.uuid,
+        colo_name: conn.colo_name,
+        is_pending_reconnect: conn.is_pending_reconnect,
+        client_id: client.id,
+        origin_ip: conn.origin_ip,
+        opened_at: conn.opened_at,
+        version: client.version,
+      })),
+  );
+  return c.json(flat);
 });

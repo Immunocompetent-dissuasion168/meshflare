@@ -1,13 +1,20 @@
 # meshflare
 
-Self-hostable [Cloudflare](https://www.cloudflare.com/) Mesh manager. One Docker image — UI, API, cron, and WireGuard extract.
+Self-hostable [Cloudflare](https://www.cloudflare.com/) Mesh & Tunnel manager. One Docker image — UI, API, cron, and WireGuard extract.
 
 **Demo (read-only):** [https://meshflare.wastu.workers.dev](https://meshflare.wastu.workers.dev)
 
 <p align="center">
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/demo-machines-dark.png">
-    <img alt="meshflare demo — machines" src="docs/screenshots/demo-machines-light.png" width="800">
+    <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/demo-mesh-dark.png">
+    <img alt="meshflare demo — mesh nodes" src="docs/screenshots/demo-mesh-light.png" width="800">
+  </picture>
+</p>
+
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/demo-tunnels-dark.png">
+    <img alt="meshflare demo — cloudflare tunnels" src="docs/screenshots/demo-tunnels-light.png" width="800">
   </picture>
 </p>
 
@@ -20,13 +27,14 @@ Self-hostable [Cloudflare](https://www.cloudflare.com/) Mesh manager. One Docker
 
 ## Features
 
-- Machines inventory (nodes + devices)
+- Cloudflare Mesh (formerly WARP-to-WARP) management
+- Cloudflare Tunnel management (list, create, rename, delete; ingress rules CRUD)
+- Auto-assign all mesh nodes and devices with `.mesh` domain (configurable)
+- WireGuard `.conf` download for nodes
 - Private CIDR and hostname routes for Mesh nodes
 - Default WARP profile split-tunnel management (include/exclude, CIDRs, and hostnames)
-- WireGuard `.conf` download for nodes
-- Configurable mesh domain (default `.mesh`) and Gateway DNS sync when an IP is known
-- Auto-delete devices offline longer than N days (default 7; nodes excluded)
-- Configurable DNS filtering from any domain-list URL (default [small.oisd.nl](https://small.oisd.nl/))
+- DNS filtering from any domain-list URL (default [small.oisd.nl](https://small.oisd.nl/))
+- Auto-delete device on mesh network if offline longer than N days (default 7)
 
 ## Image
 

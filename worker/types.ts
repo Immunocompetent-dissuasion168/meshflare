@@ -139,6 +139,58 @@ export type Settings = {
   } | null;
 };
 
+export type CloudflareTunnel = {
+  id: string;
+  account_tag: string;
+  name: string;
+  status: "inactive" | "degraded" | "healthy" | "down";
+  tun_type: "cfd_tunnel";
+  config_src: "local" | "cloudflare";
+  created_at: string;
+  deleted_at: string | null;
+  connections: CloudflareTunnelConnection[];
+  conns_active_at: string | null;
+  conns_inactive_at: string | null;
+  remote_config?: boolean;
+  metadata?: Record<string, unknown>;
+};
+
+export type CloudflareTunnelConnection = {
+  id: string;
+  uuid: string;
+  colo_name: string;
+  is_pending_reconnect: boolean;
+  client_id: string;
+  origin_ip: string;
+  opened_at: string;
+  version?: string;
+};
+
+export type CloudflareConnector = {
+  id: string;
+  version: string;
+  arch?: string;
+  features?: string[];
+  conns: CloudflareTunnelConnection[];
+};
+
+export type TunnelIngressRule = {
+  hostname?: string;
+  path?: string;
+  service: string;
+  originRequest?: Record<string, unknown>;
+};
+
+export type TunnelConfig = {
+  config: {
+    ingress: TunnelIngressRule[];
+    originRequest?: Record<string, unknown>;
+    warp_routing?: { enabled: boolean };
+  };
+  source: "local" | "cloudflare";
+  created_at?: string;
+};
+
 export type CfApiResult<T> = {
   success: boolean;
   errors: Array<{ code: number; message: string }>;

@@ -8,7 +8,7 @@ createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <BrowserRouter>
       <Routes>
-        <Route path="/" element={<Navigate to="/machines" replace />} />
+        <Route path="/" element={<Navigate to="/mesh" replace />} />
         {/* Single App instance so DNS-filter polling survives tab switches. */}
         <Route path="/*" element={<App />} />
       </Routes>

@@ -28,6 +28,38 @@ export type SplitTunnelItem = {
   description?: string;
 };
 
+export type TunnelEntry = {
+  id: string;
+  name: string;
+  status: "inactive" | "degraded" | "healthy" | "down";
+  tun_type: "cfd_tunnel";
+  config_src: "local" | "cloudflare";
+  created_at: string;
+  deleted_at: string | null;
+  connections: TunnelConnection[];
+  conns_active_at: string | null;
+  conns_inactive_at: string | null;
+  metadata?: Record<string, unknown>;
+};
+
+export type TunnelConnection = {
+  id: string;
+  uuid: string;
+  colo_name: string;
+  is_pending_reconnect: boolean;
+  client_id: string;
+  origin_ip: string;
+  opened_at: string;
+  version?: string;
+};
+
+export type TunnelIngressRule = {
+  hostname?: string;
+  path?: string;
+  service: string;
+  originRequest?: Record<string, unknown>;
+};
+
 export type SplitTunnelConfig = {
   mode: "include" | "exclude";
   include: SplitTunnelItem[];
@@ -165,6 +197,33 @@ export const api = {
     }>("/api/mesh/cleanup", {
       method: "POST",
     }),
+  // ── Cloudflare Tunnels ──────────────────────────────────────────────────
+  listTunnels: () => request<{ tunnels: TunnelEntry[] }>("/api/tunnels"),
+  createTunnel: (name: string, configSrc: "local" | "cloudflare" = "cloudflare") =>
+    request<{ tunnel: TunnelEntry }>("/api/tunnels", {
+      method: "POST",
+      body: JSON.stringify({ name, config_src: configSrc }),
+    }),
+  getTunnel: (id: string) => request<TunnelEntry>(`/api/tunnels/${id}`),
+  updateTunnel: (id: string, body: { name?: string; config_src?: "local" | "cloudflare" }) =>
+    request<TunnelEntry>(`/api/tunnels/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    }),
+  deleteTunnel: (id: string) =>
+    request<{ ok: boolean }>(`/api/tunnels/${id}`, { method: "DELETE" }),
+  getTunnelToken: (id: string) =>
+    request<{ token: string }>(`/api/tunnels/${id}/token`),
+  getTunnelConfig: (id: string) =>
+    request<{ config: { ingress: TunnelIngressRule[] } }>(`/api/tunnels/${id}/config`),
+  setTunnelConfig: (id: string, config: { config: { ingress: TunnelIngressRule[] } }) =>
+    request<{ config: { ingress: TunnelIngressRule[] } }>(`/api/tunnels/${id}/config`, {
+      method: "PUT",
+      body: JSON.stringify(config),
+    }),
+  getTunnelConnections: (id: string) =>
+    request<TunnelConnection[]>(`/api/tunnels/${id}/connections`),
+
   generateWireGuard: async (id: string, filename: string) => {
     const start = await fetch(`/api/mesh/nodes/${id}/wireguard`, { method: "POST" });
     if (!start.ok && start.status !== 202) {

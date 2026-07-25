@@ -189,7 +189,51 @@ a {
   background: var(--accent-soft);
 }
 
-.machines-toolbar {
+.section-tabs {
+  display: flex;
+  gap: 0;
+  padding: 0 0 0.75rem;
+  border-bottom: 1px solid var(--line);
+  margin-bottom: 0.75rem;
+}
+
+.section-tab {
+  appearance: none;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  padding: 0.4rem 0.85rem;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font: inherit;
+  font-size: 0.85rem;
+  font-weight: 500;
+  position: relative;
+  transition: color 0.15s;
+}
+
+.section-tab:hover {
+  color: var(--text);
+}
+
+.section-tab.active {
+  color: var(--text);
+}
+
+.section-tab.active::after {
+  content: "";
+  position: absolute;
+  bottom: -1px;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: var(--accent);
+  border-radius: 1px;
+}
+
+.mesh-toolbar {
   display: flex;
   flex-wrap: wrap;
   gap: 0.75rem;
@@ -911,6 +955,18 @@ th.sorted {
   color: var(--device);
   border-color: color-mix(in srgb, var(--device) 30%, var(--line));
   background: color-mix(in srgb, var(--device) 8%, transparent);
+}
+
+.badge.cloudflare {
+  color: #f38020;
+  border-color: color-mix(in srgb, #f38020 30%, var(--line));
+  background: color-mix(in srgb, #f38020 8%, transparent);
+}
+
+.badge.local {
+  color: var(--muted);
+  border-color: var(--line);
+  background: var(--bg2);
 }
 
 .row-actions {

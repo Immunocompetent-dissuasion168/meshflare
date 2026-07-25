@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState, useTransition, type TransitionEvent } from "react";
 import {
+  Globe,
   Loader2,
   Pencil,
   RefreshCw,
@@ -20,6 +21,7 @@ import {
   type SplitTunnelConfig,
 } from "./lib/api";
 import { ToastStack, useToasts } from "./lib/toasts";
+import { TunnelsPanel } from "./TunnelsPanel";
 import {
   copyText,
   dnsFilterStatusMeta,
@@ -28,7 +30,7 @@ import {
   warpConnectorInstallCommand,
 } from "./lib/warp";
 
-type Tab = "machines" | "settings";
+type Tab = "mesh" | "tunnels" | "settings";
 type KindFilter = "all" | "node" | "device";
 type ActivityFilter = "online" | "offline" | "all";
 type SortKey = "name" | "kind" | "meshHostname" | "ipv4" | "lastSeenAt" | "status" | "createdAt";
@@ -172,7 +174,7 @@ function CopyValue({
 export function App() {
   const location = useLocation();
   const [searchParams, setSearchParams] = useSearchParams();
-  const tab: Tab = location.pathname.startsWith("/settings") ? "settings" : "machines";
+  const tab: Tab = location.pathname.startsWith("/settings") ? "settings" : location.pathname.startsWith("/tunnels") ? "tunnels" : "mesh";
 
   const kindFilter = parseKind(searchParams.get("kind"));
   const activityParam = searchParams.get("activity");
@@ -519,7 +521,7 @@ export function App() {
       ) : null}
       <header className="top">
         <div className="brand">
-          <Link to="/machines" className="brand-link" title="Machines">
+          <Link to="/mesh" className="brand-link" title="Mesh">
             <img src="/icon-192.png" alt="" className="brand-mark" width={32} height={32} />
             <h1>
               mesh<span>flare</span>
@@ -529,11 +531,18 @@ export function App() {
         </div>
         <nav className="tabs" aria-label="Primary">
           <NavLink
-            to="/machines"
+            to="/mesh"
             className={({ isActive }) => `tab ${isActive ? "active" : ""}`}
           >
             <Server size={14} strokeWidth={2.25} aria-hidden />
-            Machines
+            Mesh
+          </NavLink>
+          <NavLink
+            to="/tunnels"
+            className={({ isActive }) => `tab ${isActive ? "active" : ""}`}
+          >
+            <Globe size={14} strokeWidth={2.25} aria-hidden />
+            Tunnels
           </NavLink>
           <NavLink
             to="/settings"
@@ -545,11 +554,11 @@ export function App() {
         </nav>
       </header>
 
-      {tab === "machines" && (
+      {tab === "mesh" && (
         <section className="panel" aria-busy={!ready}>
             <div className="panel-head">
               <h2>
-                Machines{" "}
+                Mesh{" "}
                 <span className="hint">({ready ? visibleEntries.length : "…"})</span>
               </h2>
               <div className="filters">
@@ -660,12 +669,12 @@ export function App() {
               </div>
             </div>
 
-            <div className="machines-toolbar">
+            <div className="mesh-toolbar">
               <div className="search-wrap">
                 <Search size={15} strokeWidth={2.25} aria-hidden />
                 <input
                   type="search"
-                  placeholder="Search machines…"
+                  placeholder="Search mesh entries…"
                   value={search}
                   onChange={(e) => {
                     const value = e.target.value;
@@ -687,7 +696,7 @@ export function App() {
             </div>
 
             {!ready ? (
-              <div className="table-wrap" aria-label="Loading machines">
+              <div className="table-wrap" aria-label="Loading mesh entries">
                 <table>
                   <thead>
                     <tr>
@@ -712,8 +721,8 @@ export function App() {
             ) : visibleEntries.length === 0 ? (
               <div className="empty">
                 {search.trim() || activityFilter !== "online" || kindFilter !== "all"
-                  ? "No machines match this filter."
-                  : "No machines yet."}
+                  ? "No mesh entries match this filter."
+                  : "No mesh entries yet."}
               </div>
             ) : (
               <div className="table-wrap">
@@ -772,6 +781,12 @@ export function App() {
               </div>
             )}
           </section>
+      )}
+
+      {tab === "tunnels" && (
+        <section className="panel">
+          <TunnelsPanel demo={settings?.demo} locked={locked} />
+        </section>
       )}
 
       {tab === "settings" && (

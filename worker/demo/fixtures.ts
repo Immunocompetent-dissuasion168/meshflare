@@ -1,4 +1,4 @@
-import type { MeshEntry, MeshRoute, Settings } from "../types";
+import type { CloudflareTunnel, MeshEntry, MeshRoute, TunnelConfig, Settings } from "../types";
 
 function hoursAgo(h: number, now = Date.now()): string {
   return new Date(now - h * 3_600_000).toISOString();
@@ -182,5 +182,104 @@ export function isDemoMode(env: { DEMO_MODE?: string | boolean }): boolean {
   return s === "1" || s === "true" || s === "yes";
 }
 
+export function buildDemoTunnels(now = Date.now()): CloudflareTunnel[] {
+  return [
+    {
+      id: "demo-tunnel-web",
+      account_tag: "demo-account",
+      name: "web-services",
+      status: "healthy",
+      tun_type: "cfd_tunnel",
+      config_src: "cloudflare",
+      created_at: daysAgo(30, now),
+      deleted_at: null,
+      conns_active_at: hoursAgo(0.05, now),
+      conns_inactive_at: null,
+      connections: [
+        {
+          id: "conn-1",
+          uuid: "conn-1-uuid",
+          colo_name: "CGK",
+          is_pending_reconnect: false,
+          client_id: "client-1",
+          origin_ip: "203.0.113.42",
+          opened_at: hoursAgo(0.05, now),
+          version: "2025.10.0",
+        },
+      ],
+      metadata: { environment: "production" },
+    },
+    {
+      id: "demo-tunnel-api",
+      account_tag: "demo-account",
+      name: "api-backend",
+      status: "healthy",
+      tun_type: "cfd_tunnel",
+      config_src: "cloudflare",
+      created_at: daysAgo(20, now),
+      deleted_at: null,
+      conns_active_at: hoursAgo(1, now),
+      conns_inactive_at: null,
+      connections: [
+        {
+          id: "conn-2",
+          uuid: "conn-2-uuid",
+          colo_name: "NRT",
+          is_pending_reconnect: false,
+          client_id: "client-2",
+          origin_ip: "198.51.100.10",
+          opened_at: hoursAgo(1, now),
+          version: "2025.10.0",
+        },
+      ],
+    },
+    {
+      id: "demo-tunnel-dev",
+      account_tag: "demo-account",
+      name: "dev-server",
+      status: "inactive",
+      tun_type: "cfd_tunnel",
+      config_src: "local",
+      created_at: daysAgo(5, now),
+      deleted_at: null,
+      conns_active_at: null,
+      conns_inactive_at: null,
+      connections: [],
+    },
+  ];
+}
+
+export function buildDemoTunnelConfig(tunnelId: string): TunnelConfig {
+  if (tunnelId === "demo-tunnel-web") {
+    return {
+      config: {
+        ingress: [
+          { hostname: "app.example.com", service: "http://localhost:3000" },
+          { hostname: "blog.example.com", service: "http://localhost:8080" },
+          { service: "http_status:404" },
+        ],
+        warp_routing: { enabled: false },
+      },
+      source: "cloudflare",
+    };
+  }
+  if (tunnelId === "demo-tunnel-api") {
+    return {
+      config: {
+        ingress: [
+          { hostname: "api.example.com", service: "http://localhost:4000", path: "/v1" },
+          { hostname: "api.example.com", service: "http://localhost:4001", path: "/v2" },
+          { service: "http_status:404" },
+        ],
+      },
+      source: "cloudflare",
+    };
+  }
+  return {
+    config: { ingress: [{ service: "http_status:404" }] },
+    source: "local",
+  };
+}
+
 export const DEMO_READ_ONLY =
-  "Demo is read-only. Deploy your own meshflare instance to manage machines and routes.";
+  "Demo is read-only. Deploy your own meshflare instance to manage mesh entries and routes.";

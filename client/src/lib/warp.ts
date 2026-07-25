@@ -44,6 +44,19 @@ export function machineStatusMeta(status: string): {
   return { tone: "off", label };
 }
 
+/** Colored status pill for tunnel inventory rows. */
+export function tunnelStatusMeta(status: string): {
+  tone: "off" | "ok" | "sync" | "warn" | "danger";
+  label: string;
+} {
+  const s = status.trim().toLowerCase();
+  if (s === "healthy") return { tone: "ok", label: "Healthy" };
+  if (s === "degraded") return { tone: "warn", label: "Degraded" };
+  if (s === "down") return { tone: "danger", label: "Down" };
+  if (s === "inactive") return { tone: "off", label: "Inactive" };
+  return { tone: "off", label: status };
+}
+
 /** Debian/Ubuntu one-liner: install cloudflare-warp + enroll connector + connect. */
 export function warpConnectorInstallCommand(token: string): string {
   return [

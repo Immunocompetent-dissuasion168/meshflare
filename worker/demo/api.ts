@@ -5,6 +5,8 @@ import {
   buildDemoEntries,
   buildDemoRoutes,
   buildDemoSettings,
+  buildDemoTunnelConfig,
+  buildDemoTunnels,
   isDemoMode,
 } from "../demo/fixtures";
 
@@ -49,6 +51,29 @@ demoApi.get("/settings/split-tunnels", (c) =>
     ],
   }),
 );
+
+demoApi.get("/tunnels", (c) => c.json({ tunnels: buildDemoTunnels() }));
+
+demoApi.get("/tunnels/:id", (c) => {
+  const tunnels = buildDemoTunnels();
+  const tunnel = tunnels.find((t) => t.id === c.req.param("id"));
+  if (!tunnel) throw new HTTPException(404, { message: "Tunnel not found" });
+  return c.json(tunnel);
+});
+
+demoApi.get("/tunnels/:id/token", (c) =>
+  c.json({ token: "demo-tunnel-token" }),
+);
+
+demoApi.get("/tunnels/:id/config", (c) =>
+  c.json(buildDemoTunnelConfig(c.req.param("id"))),
+);
+
+demoApi.get("/tunnels/:id/connections", (c) => {
+  const tunnels = buildDemoTunnels();
+  const tunnel = tunnels.find((t) => t.id === c.req.param("id"));
+  return c.json(tunnel?.connections ?? []);
+});
 
 demoApi.all("/*", (c) => {
   if (c.req.method === "GET" || c.req.method === "HEAD") {
