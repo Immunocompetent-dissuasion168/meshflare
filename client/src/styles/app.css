@@ -857,6 +857,10 @@ th.sorted {
   align-items: center;
 }
 
+.drawer-danger-actions {
+  gap: 0.65rem;
+}
+
 .drawer-backdrop {
   position: fixed;
   inset: 0;

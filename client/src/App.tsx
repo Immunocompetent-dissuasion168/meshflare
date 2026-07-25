@@ -376,10 +376,10 @@ export function App() {
     };
   }, [selected?.id, selected?.kind, selected?.status]);
 
-  async function regenerateNodeCode(): Promise<void> {
-    if (!drawerEntry || drawerEntry.kind !== "node") return;
-    await api.recreateNode(drawerEntry.id);
-    closeDrawer();
+  async function regenerateNodeCode(): Promise<string | null> {
+    if (!drawerEntry || drawerEntry.kind !== "node") return null;
+    const result = await api.recreateNode(drawerEntry.id);
+    return result.node.id;
   }
 
   const visibleEntries = useMemo(() => {
@@ -425,15 +425,15 @@ export function App() {
     });
   }
 
-  async function run(key: Exclude<Busy, null>, action: () => Promise<void>): Promise<boolean> {
+  async function run<T = void>(key: Exclude<Busy, null>, action: () => Promise<T>): Promise<T | null> {
     setBusy(key);
     try {
-      await action();
+      const result = await action();
       await refresh();
-      return true;
+      return result;
     } catch (e) {
       push(e instanceof Error ? e.message : String(e), "error");
-      return false;
+      return null;
     } finally {
       setBusy(null);
     }
@@ -1471,7 +1471,7 @@ export function App() {
               </div>
             )}
 
-            <div style={{ marginTop: "1.5rem" }}>
+            <div className="row-actions drawer-danger-actions" style={{ marginTop: "1.5rem" }}>
               <button
                 className="btn btn-danger"
                 disabled={locked}
@@ -1493,8 +1493,16 @@ export function App() {
                   disabled={locked}
                   onClick={() => {
                     if (!confirm("Regenerate this node? The current node and its install code will be deleted and replaced.")) return;
-                    void run("regenerate", regenerateNodeCode).then((ok) => {
-                      if (ok) push("Node regenerated. Open the new inactive node to get its install code.", "success");
+                    void run("regenerate", regenerateNodeCode).then(async (replacementId) => {
+                      if (!replacementId) return;
+                      try {
+                        const replacement = (await api.listMesh()).entries.find((entry) => entry.id === replacementId);
+                        if (!replacement) throw new Error("Regenerated node was not found after refresh");
+                        openEntry(replacement);
+                        push("Node regenerated. Open the new inactive node to get its install code.", "success");
+                      } catch (error) {
+                        push(error instanceof Error ? error.message : String(error), "error");
+                      }
                     });
                   }}
                 >
