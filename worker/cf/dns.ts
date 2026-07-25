@@ -9,6 +9,8 @@ import {
 } from "./names";
 import type { DeviceRegistration, Env, MeshEntry, MeshNode, Settings } from "../types";
 
+const DNS_MISSING_GRACE_MS = 5 * 60_000;
+
 type GatewayRule = {
   id: string;
   name: string;
@@ -334,8 +336,13 @@ export async function syncMeshDns(
   let updated = 0;
   let deleted = 0;
   let skipped = 0;
+  const now = Date.now();
+  const purgeHosts = new Set(options?.purgeHosts ?? []);
+  const missingSince = { ...(env.DB.data.dnsMissingSince ?? {}) };
+  const nextMissingSince: Record<string, string> = {};
 
   for (const [host, ipv4] of desired) {
+    delete missingSince[host];
     const existing = managed.get(host);
     const current = existing?.rule_settings?.override_ips?.[0];
     if (existing && current === ipv4) {
@@ -350,10 +357,21 @@ export async function syncMeshDns(
     } else created += 1;
   }
 
-  for (const [, rule] of managed) {
+  for (const [host, rule] of managed) {
+    if (!purgeHosts.has(host)) {
+      const startedAt = Date.parse(missingSince[host] ?? "");
+      if (!Number.isFinite(startedAt) || now - startedAt < DNS_MISSING_GRACE_MS) {
+        nextMissingSince[host] = missingSince[host] ?? new Date(now).toISOString();
+        continue;
+      }
+    }
     await deleteGatewayRule(cf, rule.id);
     deleted += 1;
   }
+
+  await env.DB.update((data) => {
+    data.dnsMissingSince = nextMissingSince;
+  });
 
   return {
     created,

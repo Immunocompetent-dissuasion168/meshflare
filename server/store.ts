@@ -14,6 +14,7 @@ export const defaultAppData = (): AppData => ({
   meshSuffix: "mesh",
   lastDnsSyncAt: null,
   lastCleanupAt: null,
+  dnsMissingSince: {},
 });
 
 export type AppDb = Low<AppData>;

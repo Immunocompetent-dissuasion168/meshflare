@@ -12,6 +12,7 @@ export type AppData = {
   meshSuffix: string;
   lastDnsSyncAt: string | null;
   lastCleanupAt: string | null;
+  dnsMissingSince: Record<string, string>;
 };
 
 export type AppDb = Low<AppData>;
